@@ -39,11 +39,6 @@
 //
 
 static NDIS_STATUS
-AdapterStop (
-    IN  PADAPTER    Adapter
-    );
-
-static NDIS_STATUS
 AdapterSetRegistrationAttributes (
     IN  PADAPTER Adapter
     );
@@ -223,7 +218,7 @@ AdapterCheckForHang (
 //
 // Frees resources obtained by AdapterInitialize.
 //
-static VOID
+VOID
 AdapterCleanup (
     IN  PADAPTER Adapter
     )
@@ -236,54 +231,10 @@ AdapterCleanup (
     if (Adapter->NdisDmaHandle != NULL)
         NdisMDeregisterScatterGatherDma(Adapter->NdisDmaHandle);
 
-    if (Adapter->AcquiredInterfaces) {
-        VIF(Release, Adapter->VifInterface);
-        Adapter->VifInterface = NULL;
-    }
+    XENVIF_VIF(Release, &Adapter->VifInterface);
+    Adapter->AcquiredInterfaces = FALSE;
 
     Trace("<====\n");
-    return;
-}
-
-//
-// Frees adapter storage.
-//
-VOID
-AdapterDelete (
-    IN  OUT PADAPTER* Adapter
-    )
-{
-    ASSERT(Adapter != NULL);
-
-    if (*Adapter) {
-        AdapterCleanup(*Adapter);
-        ExFreePool(*Adapter);
-        *Adapter = NULL;
-    }
-
-    return;
-}
-
-//
-// Stops adapter and frees all resources.
-//
-VOID 
-AdapterHalt (
-    IN  NDIS_HANDLE             NdisHandle,
-    IN  NDIS_HALT_ACTION        HaltAction
-    )
-{
-    NDIS_STATUS ndisStatus;
-    PADAPTER Adapter = (PADAPTER)NdisHandle;
-
-    UNREFERENCED_PARAMETER(HaltAction);
-
-
-    ndisStatus = AdapterStop(Adapter);
-    if (ndisStatus == NDIS_STATUS_SUCCESS) {
-        AdapterDelete(&Adapter);
-    }
-
     return;
 }
 
@@ -301,11 +252,11 @@ AdapterMediaStateChange(
     LinkState.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
     LinkState.Header.Size = sizeof(NDIS_LINK_STATE);
 
-    VIF(QueryMediaState,
-        Adapter->VifInterface,
-        &LinkState.MediaConnectState,
-        &LinkState.RcvLinkSpeed,
-        &LinkState.MediaDuplexState);
+    XENVIF_VIF(MacQueryState,
+               &Adapter->VifInterface,
+               &LinkState.MediaConnectState,
+               &LinkState.RcvLinkSpeed,
+               &LinkState.MediaDuplexState);
 
     if (LinkState.MediaConnectState == MediaConnectStateUnknown) {
         Info("LINK: STATE UNKNOWN\n");
@@ -345,17 +296,17 @@ AdapterMediaStateChange(
 
 static VOID
 AdapterVifCallback(
-    IN  PVOID                   Context,
-    IN  XENVIF_CALLBACK_TYPE    Type,
+    IN  PVOID                       Context,
+    IN  XENVIF_VIF_CALLBACK_TYPE    Type,
     ...)
 {
-    PADAPTER                    Adapter = Context;
-    va_list                     Arguments;
+    PADAPTER                        Adapter = Context;
+    va_list                         Arguments;
 
     va_start(Arguments, Type);
 
     switch (Type) {
-    case XENVIF_CALLBACK_COMPLETE_PACKETS: {
+    case XENVIF_TRANSMITTER_RETURN_PACKETS: {
         PXENVIF_TRANSMITTER_PACKET HeadPacket;
 
         HeadPacket = va_arg(Arguments, PXENVIF_TRANSMITTER_PACKET);
@@ -363,7 +314,7 @@ AdapterVifCallback(
         TransmitterCompletePackets(Adapter->Transmitter, HeadPacket);
         break;
     }
-    case XENVIF_CALLBACK_RECEIVE_PACKETS: {
+    case XENVIF_RECEIVER_QUEUE_PACKETS: {
         PLIST_ENTRY List;
 
         List = va_arg(Arguments, PLIST_ENTRY);
@@ -371,7 +322,7 @@ AdapterVifCallback(
         ReceiverReceivePackets(&Adapter->Receiver, List);
         break;
     }
-    case XENVIF_CALLBACK_MEDIA_STATE_CHANGE: {
+    case XENVIF_MAC_STATE_CHANGE: {
         AdapterMediaStateChange(Adapter);
         break;
     }
@@ -445,6 +396,12 @@ AdapterInitialize (
     NDIS_SG_DMA_DESCRIPTION DmaDescription;
     NTSTATUS status;
 
+    status = XENVIF_VIF(Acquire, &Adapter->VifInterface);
+    if (!NT_SUCCESS(status))
+        return NDIS_STATUS_FAILURE;
+
+    Adapter->AcquiredInterfaces = TRUE;
+
     Trace("====>\n");
 
     Adapter->NdisAdapterHandle = AdapterHandle;
@@ -506,12 +463,10 @@ AdapterInitialize (
         Adapter->NdisDmaHandle = NULL;
 
     ASSERT(!Adapter->Enabled);
-    VIF(Acquire, Adapter->VifInterface);
-
-    status = VIF(Enable,
-                 Adapter->VifInterface,
-                 AdapterVifCallback,
-                 Adapter);
+    status = XENVIF_VIF(Enable,
+                        &Adapter->VifInterface,
+                        AdapterVifCallback,
+                        Adapter);
     if (NT_SUCCESS(status)) {
         TransmitterEnable(Adapter->Transmitter);
         Adapter->Enabled = TRUE;
@@ -521,6 +476,9 @@ AdapterInitialize (
     }
 
 exit:
+    if (ndisStatus != NDIS_STATUS_SUCCESS)
+        XENVIF_VIF(Release, &Adapter->VifInterface);
+
     Trace("<==== (%08x)\n", ndisStatus);
     return ndisStatus;
 }
@@ -594,8 +552,8 @@ AdapterPause (
     if (!Adapter->Enabled)
         goto done;
 
-    VIF(Disable,
-        Adapter->VifInterface);
+    XENVIF_VIF(Disable,
+               &Adapter->VifInterface);
 
     AdapterMediaStateChange(Adapter);
 
@@ -654,11 +612,7 @@ AdapterQueryGeneralStatistics (
     )
 {
     NDIS_STATUS ndisStatus = NDIS_STATUS_SUCCESS;
-    XENVIF_PACKET_STATISTICS Statistics;
-
-    VIF(QueryPacketStatistics,
-        Adapter->VifInterface,
-        &Statistics);
+    ULONGLONG   Value;
 
     NdisZeroMemory(NdisStatisticsInfo, sizeof(NDIS_STATISTICS_INFO));
     NdisStatisticsInfo->Header.Revision = NDIS_OBJECT_REVISION_1;
@@ -666,63 +620,199 @@ AdapterQueryGeneralStatistics (
     NdisStatisticsInfo->Header.Size = sizeof(NDIS_STATISTICS_INFO);
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_RCV_ERROR;
-    NdisStatisticsInfo->ifInErrors =
-        Statistics.Receiver.BackendError +
-        Statistics.Receiver.FrontendError;
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_RECEIVER_BACKEND_ERRORS,
+                      &Value);
+
+    NdisStatisticsInfo->ifInErrors = Value;
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_RECEIVER_FRONTEND_ERRORS,
+                      &Value);
+
+    NdisStatisticsInfo->ifInErrors += Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_RCV_DISCARDS;
-    NdisStatisticsInfo->ifInDiscards = Statistics.Receiver.Drop;
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_RECEIVER_PACKETS_DROPPED,
+                      &Value);
+
+    NdisStatisticsInfo->ifInDiscards = Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_BYTES_RCV;
-    NdisStatisticsInfo->ifHCInOctets = Statistics.Receiver.UnicastBytes +
-                                       Statistics.Receiver.MulticastBytes +
-                                       Statistics.Receiver.BroadcastBytes;
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_RECEIVER_UNICAST_OCTETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCInOctets = Value;
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_RECEIVER_MULTICAST_OCTETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCInOctets += Value;
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_RECEIVER_BROADCAST_OCTETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCInOctets += Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_DIRECTED_BYTES_RCV;
-    NdisStatisticsInfo->ifHCInUcastOctets = Statistics.Receiver.UnicastBytes;
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_RECEIVER_UNICAST_OCTETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCInUcastOctets = Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_DIRECTED_FRAMES_RCV;
-    NdisStatisticsInfo->ifHCInUcastPkts = Statistics.Receiver.Unicast;
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_RECEIVER_UNICAST_PACKETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCInUcastPkts = Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_MULTICAST_BYTES_RCV;
-    NdisStatisticsInfo->ifHCInMulticastOctets = Statistics.Receiver.MulticastBytes;  
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_RECEIVER_MULTICAST_OCTETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCInMulticastOctets = Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_MULTICAST_FRAMES_RCV;
-    NdisStatisticsInfo->ifHCInMulticastPkts = Statistics.Receiver.Multicast;  
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_RECEIVER_MULTICAST_PACKETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCInMulticastPkts = Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_BROADCAST_BYTES_RCV;
-    NdisStatisticsInfo->ifHCInBroadcastOctets = Statistics.Receiver.BroadcastBytes;  
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_RECEIVER_BROADCAST_OCTETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCInBroadcastOctets = Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_BROADCAST_FRAMES_RCV;
-    NdisStatisticsInfo->ifHCInBroadcastPkts = Statistics.Receiver.Broadcast;  
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_RECEIVER_BROADCAST_PACKETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCInBroadcastPkts = Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_XMIT_ERROR;
-    NdisStatisticsInfo->ifOutErrors =
-        Statistics.Transmitter.BackendError +
-        Statistics.Transmitter.FrontendError;
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_TRANSMITTER_BACKEND_ERRORS,
+                      &Value);
+
+    NdisStatisticsInfo->ifOutErrors = Value;
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_TRANSMITTER_FRONTEND_ERRORS,
+                      &Value);
+
+    NdisStatisticsInfo->ifOutErrors += Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_BYTES_XMIT;
-    NdisStatisticsInfo->ifHCOutOctets = Statistics.Transmitter.UnicastBytes + 
-                                        Statistics.Transmitter.MulticastBytes + 
-                                        Statistics.Transmitter.BroadcastBytes;
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_TRANSMITTER_UNICAST_OCTETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCOutOctets = Value;
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_TRANSMITTER_MULTICAST_OCTETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCOutOctets += Value;
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_TRANSMITTER_BROADCAST_OCTETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCOutOctets += Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_DIRECTED_BYTES_XMIT;
-    NdisStatisticsInfo->ifHCOutUcastOctets = Statistics.Transmitter.UnicastBytes;     
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_TRANSMITTER_UNICAST_OCTETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCOutUcastOctets = Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_DIRECTED_FRAMES_XMIT;
-    NdisStatisticsInfo->ifHCOutUcastPkts = Statistics.Transmitter.Unicast;     
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_TRANSMITTER_UNICAST_PACKETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCOutUcastPkts = Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_MULTICAST_BYTES_XMIT;    
-    NdisStatisticsInfo->ifHCOutMulticastOctets = Statistics.Transmitter.MulticastBytes; 
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_TRANSMITTER_MULTICAST_OCTETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCOutMulticastOctets = Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_MULTICAST_FRAMES_XMIT;    
-    NdisStatisticsInfo->ifHCOutMulticastPkts = Statistics.Transmitter.MulticastBytes;
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_TRANSMITTER_MULTICAST_PACKETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCOutMulticastPkts = Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_BROADCAST_BYTES_XMIT;
-    NdisStatisticsInfo->ifHCOutBroadcastOctets = Statistics.Transmitter.BroadcastBytes; 
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_TRANSMITTER_BROADCAST_OCTETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCOutBroadcastOctets = Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_BROADCAST_FRAMES_XMIT;
-    NdisStatisticsInfo->ifHCOutBroadcastPkts = Statistics.Transmitter.Broadcast;
+
+    (VOID) XENVIF_VIF(QueryStatistic,
+                      &Adapter->VifInterface,
+                      XENVIF_TRANSMITTER_BROADCAST_PACKETS,
+                      &Value);
+
+    NdisStatisticsInfo->ifHCOutBroadcastPkts = Value;
 
     NdisStatisticsInfo->SupportedStatistics |= NDIS_STATISTICS_FLAGS_VALID_XMIT_DISCARDS;
     NdisStatisticsInfo->ifOutDiscards = 0;
@@ -737,39 +827,39 @@ GetPacketFilter(PADAPTER Adapter, PULONG PacketFilter)
     XENVIF_MAC_FILTER_LEVEL MulticastFilterLevel;
     XENVIF_MAC_FILTER_LEVEL BroadcastFilterLevel;
 
-    VIF(QueryFilterLevel,
-        Adapter->VifInterface,
-        ETHERNET_ADDRESS_UNICAST,
-        &UnicastFilterLevel);
+    XENVIF_VIF(MacQueryFilterLevel,
+               &Adapter->VifInterface,
+               ETHERNET_ADDRESS_UNICAST,
+               &UnicastFilterLevel);
 
-    VIF(QueryFilterLevel,
-        Adapter->VifInterface,
-        ETHERNET_ADDRESS_MULTICAST,
-        &MulticastFilterLevel);
+    XENVIF_VIF(MacQueryFilterLevel,
+               &Adapter->VifInterface,
+               ETHERNET_ADDRESS_MULTICAST,
+               &MulticastFilterLevel);
 
-    VIF(QueryFilterLevel,
-        Adapter->VifInterface,
-        ETHERNET_ADDRESS_BROADCAST,
-        &BroadcastFilterLevel);
+    XENVIF_VIF(MacQueryFilterLevel,
+               &Adapter->VifInterface,
+               ETHERNET_ADDRESS_BROADCAST,
+               &BroadcastFilterLevel);
 
     *PacketFilter = 0;
 
-    if (UnicastFilterLevel == MAC_FILTER_ALL) {
-        ASSERT3U(MulticastFilterLevel, ==, MAC_FILTER_ALL);
-        ASSERT3U(BroadcastFilterLevel, ==, MAC_FILTER_ALL);
+    if (UnicastFilterLevel == XENVIF_MAC_FILTER_ALL) {
+        ASSERT3U(MulticastFilterLevel, ==, XENVIF_MAC_FILTER_ALL);
+        ASSERT3U(BroadcastFilterLevel, ==, XENVIF_MAC_FILTER_ALL);
 
         *PacketFilter |= NDIS_PACKET_TYPE_PROMISCUOUS;
         return;
-    } else if (UnicastFilterLevel == MAC_FILTER_MATCHING) {
+    } else if (UnicastFilterLevel == XENVIF_MAC_FILTER_MATCHING) {
         *PacketFilter |= NDIS_PACKET_TYPE_DIRECTED;
     }
 
-    if (MulticastFilterLevel == MAC_FILTER_ALL)
+    if (MulticastFilterLevel == XENVIF_MAC_FILTER_ALL)
         *PacketFilter |= NDIS_PACKET_TYPE_ALL_MULTICAST;
-    else if (MulticastFilterLevel == MAC_FILTER_MATCHING)
+    else if (MulticastFilterLevel == XENVIF_MAC_FILTER_MATCHING)
         *PacketFilter |= NDIS_PACKET_TYPE_MULTICAST;
 
-    if (BroadcastFilterLevel == MAC_FILTER_ALL)
+    if (BroadcastFilterLevel == XENVIF_MAC_FILTER_ALL)
         *PacketFilter |= NDIS_PACKET_TYPE_BROADCAST;
 }
 
@@ -862,18 +952,18 @@ AdapterQueryInformation (
             break;
 
         case OID_GEN_TRANSMIT_BUFFER_SPACE:
-            VIF(QueryTransmitterRingSize,
-                Adapter->VifInterface,
-                (PULONG)&infoData);
+            XENVIF_VIF(TransmitterQueryRingSize,
+                       &Adapter->VifInterface,
+                       (PULONG)&infoData);
             infoData *= Adapter->MaximumFrameSize;
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
 
         case OID_GEN_RECEIVE_BUFFER_SPACE:
-            VIF(QueryTransmitterRingSize,
-                Adapter->VifInterface,
-                (PULONG)&infoData);
+            XENVIF_VIF(TransmitterQueryRingSize,
+                       &Adapter->VifInterface,
+                       (PULONG)&infoData);
             infoData *= Adapter->MaximumFrameSize;
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
@@ -926,19 +1016,19 @@ AdapterQueryInformation (
 
             doCopy = FALSE;
 
-            VIF(QueryMulticastAddresses,
-                Adapter->VifInterface,
-                NULL,
-                &Count);
+            XENVIF_VIF(MacQueryMulticastAddresses,
+                       &Adapter->VifInterface,
+                       NULL,
+                       &Count);
             bytesAvailable = Count * ETHERNET_ADDRESS_LENGTH;
 
             if (informationBufferLength >= bytesAvailable) {
                 NTSTATUS status;
 
-                status = VIF(QueryMulticastAddresses,
-                             Adapter->VifInterface,
-                             informationBuffer,
-                             &Count);
+                status = XENVIF_VIF(MacQueryMulticastAddresses,
+                                    &Adapter->VifInterface,
+                                    informationBuffer,
+                                    &Count);
                 if (!NT_SUCCESS(status))
                     ndisStatus = NDIS_STATUS_FAILURE;
             }
@@ -946,17 +1036,17 @@ AdapterQueryInformation (
             break;
         }
         case OID_802_3_PERMANENT_ADDRESS:
-            VIF(QueryPermanentAddress,
-                Adapter->VifInterface,
-                (PETHERNET_ADDRESS)&infoData);
+            XENVIF_VIF(MacQueryPermanentAddress,
+                       &Adapter->VifInterface,
+                       (PETHERNET_ADDRESS)&infoData);
             info = &infoData;
             bytesAvailable = sizeof (ETHERNET_ADDRESS);
             break;
 
         case OID_802_3_CURRENT_ADDRESS:
-            VIF(QueryCurrentAddress,
-                Adapter->VifInterface,
-                (PETHERNET_ADDRESS)&infoData);
+            XENVIF_VIF(MacQueryCurrentAddress,
+                       &Adapter->VifInterface,
+                       (PETHERNET_ADDRESS)&infoData);
             info = &infoData;
             bytesAvailable = sizeof (ETHERNET_ADDRESS);
             break;
@@ -992,33 +1082,26 @@ AdapterQueryInformation (
         case OID_GEN_LINK_SPEED: {
             ULONG64 LinkSpeed;
 
-            VIF(QueryMediaState,
-                Adapter->VifInterface,
-                NULL,
-                &LinkSpeed,
-                NULL);
+            XENVIF_VIF(MacQueryState,
+                       &Adapter->VifInterface,
+                       NULL,
+                       &LinkSpeed,
+                       NULL);
 
             infoData = (ULONG)(LinkSpeed / 100);
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
         }
-        case OID_GEN_MEDIA_CONNECT_STATUS: {
-            NET_IF_MEDIA_CONNECT_STATE MediaConnectState;
-
-            VIF(QueryMediaState,
-                Adapter->VifInterface,
-                &MediaConnectState,
-                NULL,
-                NULL);
-
-            infoData = (MediaConnectState != MediaConnectStateDisconnected) ?
-                       NdisMediaStateConnected :
-                       NdisMediaStateDisconnected;
+        case OID_GEN_MEDIA_CONNECT_STATUS:
+            XENVIF_VIF(MacQueryState,
+                       &Adapter->VifInterface,
+                       (PNET_IF_MEDIA_CONNECT_STATE)&infoData,
+                       NULL,
+                       NULL);
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
-        }
         case OID_GEN_MAXIMUM_SEND_PACKETS:
             infoData = 16;
             info = &infoData;
@@ -1032,57 +1115,99 @@ AdapterQueryInformation (
             break;
 
         case OID_GEN_XMIT_OK: {
-            XENVIF_PACKET_STATISTICS    Statistics;
+            ULONGLONG   Value;
 
-            VIF(QueryPacketStatistics,
-                Adapter->VifInterface,
-                &Statistics);
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_TRANSMITTER_UNICAST_PACKETS,
+                       &Value);
 
-            infoData = Statistics.Transmitter.Unicast +
-                       Statistics.Transmitter.Multicast +
-                       Statistics.Transmitter.Broadcast;
+            infoData = Value;
+
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_TRANSMITTER_MULTICAST_PACKETS,
+                       &Value);
+
+            infoData += Value;
+
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_TRANSMITTER_BROADCAST_PACKETS,
+                       &Value);
+
+            infoData += Value;
 
             info = &infoData;
             bytesAvailable = sizeof(ULONGLONG);
             break;
         }
         case OID_GEN_RCV_OK: {
-            XENVIF_PACKET_STATISTICS    Statistics;
+            ULONGLONG   Value;
 
-            VIF(QueryPacketStatistics,
-                Adapter->VifInterface,
-                &Statistics);
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_RECEIVER_UNICAST_PACKETS,
+                       &Value);
 
-            infoData = Statistics.Receiver.Unicast +
-                       Statistics.Receiver.Multicast +
-                       Statistics.Receiver.Broadcast;
+            infoData = Value;
+
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_RECEIVER_MULTICAST_PACKETS,
+                       &Value);
+
+            infoData += Value;
+
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_RECEIVER_BROADCAST_PACKETS,
+                       &Value);
+
+            infoData += Value;
 
             info = &infoData;
             bytesAvailable = sizeof(ULONGLONG);
             break;
         }
         case OID_GEN_XMIT_ERROR: {
-            XENVIF_PACKET_STATISTICS    Statistics;
+            ULONGLONG   Value;
 
-            VIF(QueryPacketStatistics,
-                Adapter->VifInterface,
-                &Statistics);
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_TRANSMITTER_BACKEND_ERRORS,
+                       &Value);
 
-            infoData = (ULONG)(Statistics.Transmitter.BackendError +
-                               Statistics.Transmitter.FrontendError);
+            infoData = Value;
+
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_TRANSMITTER_FRONTEND_ERRORS,
+                       &Value);
+
+            infoData += Value;
+
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
         }
         case OID_GEN_RCV_ERROR: {
-            XENVIF_PACKET_STATISTICS    Statistics;
+            ULONGLONG   Value;
 
-            VIF(QueryPacketStatistics,
-                Adapter->VifInterface,
-                &Statistics);
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_RECEIVER_BACKEND_ERRORS,
+                       &Value);
 
-            infoData = (ULONG)(Statistics.Receiver.BackendError +
-                               Statistics.Receiver.FrontendError);
+            infoData = Value;
+
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_RECEIVER_FRONTEND_ERRORS,
+                       &Value);
+
+            infoData += Value;
+
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
@@ -1100,7 +1225,7 @@ AdapterQueryInformation (
             break;
 
         case OID_802_3_MAXIMUM_LIST_SIZE:
-            infoData = MAXIMUM_MULTICAST_ADDRESS_COUNT;
+            infoData = 32;
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
@@ -1126,145 +1251,169 @@ AdapterQueryInformation (
             break;
 
         case OID_GEN_DIRECTED_BYTES_XMIT: {
-            XENVIF_PACKET_STATISTICS    Statistics;
+            ULONGLONG   Value;
 
-            VIF(QueryPacketStatistics,
-                Adapter->VifInterface,
-                &Statistics);
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_TRANSMITTER_UNICAST_OCTETS,
+                       &Value);
 
-            infoData = (ULONG)Statistics.Transmitter.UnicastBytes;
+            infoData = Value;
+
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
         }
         case OID_GEN_DIRECTED_FRAMES_XMIT: {
-            XENVIF_PACKET_STATISTICS    Statistics;
+            ULONGLONG   Value;
 
-            VIF(QueryPacketStatistics,
-                Adapter->VifInterface,
-                &Statistics);
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_TRANSMITTER_UNICAST_PACKETS,
+                       &Value);
 
-            infoData = (ULONG)Statistics.Transmitter.Unicast;
+            infoData = Value;
+
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
         }
         case OID_GEN_MULTICAST_BYTES_XMIT: {
-            XENVIF_PACKET_STATISTICS    Statistics;
+            ULONGLONG   Value;
 
-            VIF(QueryPacketStatistics,
-                Adapter->VifInterface,
-                &Statistics);
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_TRANSMITTER_MULTICAST_OCTETS,
+                       &Value);
 
-            infoData = (ULONG)Statistics.Transmitter.MulticastBytes;
+            infoData = Value;
+
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
         }
         case OID_GEN_MULTICAST_FRAMES_XMIT: {
-            XENVIF_PACKET_STATISTICS    Statistics;
+            ULONGLONG   Value;
 
-            VIF(QueryPacketStatistics,
-                Adapter->VifInterface,
-                &Statistics);
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_TRANSMITTER_MULTICAST_PACKETS,
+                       &Value);
 
-            infoData = (ULONG)Statistics.Transmitter.Multicast;
+            infoData = Value;
+
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
         }
         case OID_GEN_BROADCAST_BYTES_XMIT: {
-            XENVIF_PACKET_STATISTICS    Statistics;
+            ULONGLONG   Value;
 
-            VIF(QueryPacketStatistics,
-                Adapter->VifInterface,
-                &Statistics);
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_TRANSMITTER_BROADCAST_OCTETS,
+                       &Value);
 
-            infoData = (ULONG)Statistics.Transmitter.BroadcastBytes;
+            infoData = Value;
+
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
         }
         case OID_GEN_BROADCAST_FRAMES_XMIT: {
-            XENVIF_PACKET_STATISTICS    Statistics;
+            ULONGLONG   Value;
 
-            VIF(QueryPacketStatistics,
-                Adapter->VifInterface,
-                &Statistics);
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_TRANSMITTER_BROADCAST_PACKETS,
+                       &Value);
 
-            infoData = (ULONG)Statistics.Transmitter.Broadcast;
+            infoData = Value;
+
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
         }
         case OID_GEN_DIRECTED_BYTES_RCV: {
-            XENVIF_PACKET_STATISTICS    Statistics;
+            ULONGLONG   Value;
 
-            VIF(QueryPacketStatistics,
-                Adapter->VifInterface,
-                &Statistics);
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_RECEIVER_UNICAST_OCTETS,
+                       &Value);
 
-            infoData = (ULONG)Statistics.Receiver.UnicastBytes;
+            infoData = Value;
+
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
         }
         case OID_GEN_DIRECTED_FRAMES_RCV: {
-            XENVIF_PACKET_STATISTICS    Statistics;
+            ULONGLONG   Value;
 
-            VIF(QueryPacketStatistics,
-                Adapter->VifInterface,
-                &Statistics);
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_RECEIVER_UNICAST_PACKETS,
+                       &Value);
 
-            infoData = (ULONG)Statistics.Receiver.Unicast;
+            infoData = Value;
+
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
         }
         case OID_GEN_MULTICAST_BYTES_RCV: {
-            XENVIF_PACKET_STATISTICS    Statistics;
+            ULONGLONG   Value;
 
-            VIF(QueryPacketStatistics,
-                Adapter->VifInterface,
-                &Statistics);
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_RECEIVER_MULTICAST_OCTETS,
+                       &Value);
 
-            infoData = (ULONG)Statistics.Receiver.MulticastBytes;
+            infoData = Value;
+
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
         }
         case OID_GEN_MULTICAST_FRAMES_RCV: {
-            XENVIF_PACKET_STATISTICS    Statistics;
+            ULONGLONG   Value;
 
-            VIF(QueryPacketStatistics,
-                Adapter->VifInterface,
-                &Statistics);
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_RECEIVER_MULTICAST_PACKETS,
+                       &Value);
 
-            infoData = (ULONG)Statistics.Receiver.Multicast;
+            infoData = Value;
+
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
         }
         case OID_GEN_BROADCAST_BYTES_RCV: {
-            XENVIF_PACKET_STATISTICS    Statistics;
+            ULONGLONG   Value;
 
-            VIF(QueryPacketStatistics,
-                Adapter->VifInterface,
-                &Statistics);
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_RECEIVER_BROADCAST_OCTETS,
+                       &Value);
 
-            infoData = (ULONG)Statistics.Receiver.BroadcastBytes;
+            infoData = Value;
+
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
         }
         case OID_GEN_BROADCAST_FRAMES_RCV: {
-            XENVIF_PACKET_STATISTICS    Statistics;
+            ULONGLONG   Value;
 
-            VIF(QueryPacketStatistics,
-                Adapter->VifInterface,
-                &Statistics);
+            XENVIF_VIF(QueryStatistic,
+                       &Adapter->VifInterface,
+                       XENVIF_RECEIVER_BROADCAST_PACKETS,
+                       &Value);
 
-            infoData = (ULONG)Statistics.Receiver.Broadcast;
+            infoData = Value;
+
             info = &infoData;
             bytesAvailable = sizeof(ULONG);
             break;
@@ -1357,8 +1506,8 @@ AdapterRestart (
         goto done;
     }
 
-    status = VIF(Enable,
-                 Adapter->VifInterface,
+    status = XENVIF_VIF(Enable,
+                 &Adapter->VifInterface,
                  AdapterVifCallback,
                  Adapter);
     if (NT_SUCCESS(status)) {
@@ -1447,9 +1596,9 @@ AdapterSetGeneralAttributes (
 
     generalAttributes.MediaType = XENNET_MEDIA_TYPE;
 
-    VIF(QueryMaximumFrameSize,
-        Adapter->VifInterface,
-        (PULONG)&Adapter->MaximumFrameSize);
+    XENVIF_VIF(MacQueryMaximumFrameSize,
+               &Adapter->VifInterface,
+               (PULONG)&Adapter->MaximumFrameSize);
 
     generalAttributes.MtuSize = Adapter->MaximumFrameSize - sizeof (ETHERNET_TAGGED_HEADER);
     generalAttributes.MaxXmitLinkSpeed = XENNET_MEDIA_MAX_SPEED;
@@ -1464,15 +1613,15 @@ AdapterSetGeneralAttributes (
 
     generalAttributes.SupportedPacketFilters = XENNET_SUPPORTED_PACKET_FILTERS;
         
-    generalAttributes.MaxMulticastListSize = MAXIMUM_MULTICAST_ADDRESS_COUNT;
+    generalAttributes.MaxMulticastListSize = 32;
     generalAttributes.MacAddressLength = ETHERNET_ADDRESS_LENGTH;
 
-    VIF(QueryPermanentAddress,
-        Adapter->VifInterface,
-        (PETHERNET_ADDRESS)&generalAttributes.PermanentMacAddress);
-    VIF(QueryCurrentAddress,
-        Adapter->VifInterface,
-        (PETHERNET_ADDRESS)&generalAttributes.CurrentMacAddress);
+    XENVIF_VIF(MacQueryPermanentAddress,
+               &Adapter->VifInterface,
+               (PETHERNET_ADDRESS)&generalAttributes.PermanentMacAddress);
+    XENVIF_VIF(MacQueryCurrentAddress,
+               &Adapter->VifInterface,
+               (PETHERNET_ADDRESS)&generalAttributes.CurrentMacAddress);
 
     generalAttributes.PhysicalMediumType = NdisPhysicalMedium802_3;
     generalAttributes.RecvScaleCapabilities = NULL;
@@ -1583,7 +1732,7 @@ AdapterSetOffloadAttributes(
 {
     PNDIS_MINIPORT_ADAPTER_ATTRIBUTES adapterAttributes;
     NDIS_MINIPORT_ADAPTER_OFFLOAD_ATTRIBUTES offloadAttributes;
-    XENVIF_OFFLOAD_OPTIONS Options;
+    XENVIF_VIF_OFFLOAD_OPTIONS Options;
     NDIS_OFFLOAD current;
     NDIS_OFFLOAD supported;
     NDIS_STATUS ndisStatus;
@@ -1611,9 +1760,9 @@ AdapterSetOffloadAttributes(
     NdisZeroMemory(&current, sizeof(current));
     NdisZeroMemory(&supported, sizeof(supported));
     
-    VIF(UpdateOffloadOptions,
-        Adapter->VifInterface,
-        Adapter->Receiver.OffloadOptions);
+    XENVIF_VIF(ReceiverSetOffloadOptions,
+               &Adapter->VifInterface,
+               Adapter->Receiver.OffloadOptions);
 
     supported.Header.Type = NDIS_OBJECT_TYPE_OFFLOAD;
     supported.Header.Revision = NDIS_OFFLOAD_REVISION_1;
@@ -1638,9 +1787,9 @@ AdapterSetOffloadAttributes(
 
     supported.Checksum.IPv6Receive.UdpChecksum = 1;
 
-    VIF(QueryOffloadOptions,
-        Adapter->VifInterface,
-        &Options);
+    XENVIF_VIF(TransmitterQueryOffloadOptions,
+               &Adapter->VifInterface,
+               &Options);
 
     supported.Checksum.IPv4Transmit.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
 
@@ -1672,10 +1821,10 @@ AdapterSetOffloadAttributes(
     if (Options.OffloadIpVersion4LargePacket) {
         ULONG Size;
 
-        VIF(QueryLargePacketSize,
-            Adapter->VifInterface,
-            4,
-            &Size);
+        XENVIF_VIF(TransmitterQueryLargePacketSize,
+                   &Adapter->VifInterface,
+                   4,
+                   &Size);
 
         supported.LsoV2.IPv4.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
         supported.LsoV2.IPv4.MaxOffLoadSize = Size;
@@ -1685,10 +1834,10 @@ AdapterSetOffloadAttributes(
     if (Options.OffloadIpVersion6LargePacket) {
         ULONG Size;
 
-        VIF(QueryLargePacketSize,
-            Adapter->VifInterface,
-            6,
-            &Size);
+        XENVIF_VIF(TransmitterQueryLargePacketSize,
+                   &Adapter->VifInterface,
+                   6,
+                   &Size);
 
         supported.LsoV2.IPv6.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
         supported.LsoV2.IPv6.MaxOffLoadSize = Size;
@@ -1801,9 +1950,9 @@ AdapterIndicateOffloadChanged (
         offload.Checksum.IPv6Receive.UdpChecksum = 1;
     }
 
-    VIF(UpdateOffloadOptions,
-        Adapter->VifInterface,
-        Adapter->Receiver.OffloadOptions);
+    XENVIF_VIF(ReceiverSetOffloadOptions,
+               &Adapter->VifInterface,
+               Adapter->Receiver.OffloadOptions);
 
     offload.Checksum.IPv4Transmit.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
 
@@ -1837,10 +1986,10 @@ AdapterIndicateOffloadChanged (
     if (Adapter->Transmitter->OffloadOptions.OffloadIpVersion4LargePacket) {
         ULONG Size;
 
-        VIF(QueryLargePacketSize,
-            Adapter->VifInterface,
-            4,
-            &Size);
+        XENVIF_VIF(TransmitterQueryLargePacketSize,
+                   &Adapter->VifInterface,
+                   4,
+                   &Size);
 
         offload.LsoV2.IPv4.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
         offload.LsoV2.IPv4.MaxOffLoadSize = Size;
@@ -1850,10 +1999,10 @@ AdapterIndicateOffloadChanged (
     if (Adapter->Transmitter->OffloadOptions.OffloadIpVersion6LargePacket) {
         ULONG Size;
 
-        VIF(QueryLargePacketSize,
-            Adapter->VifInterface,
-            6,
-            &Size);
+        XENVIF_VIF(TransmitterQueryLargePacketSize,
+                   &Adapter->VifInterface,
+                   6,
+                   &Size);
 
         offload.LsoV2.IPv6.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
         offload.LsoV2.IPv6.MaxOffLoadSize = Size;
@@ -1884,12 +2033,10 @@ SetMulticastAddresses(PADAPTER Adapter, PETHERNET_ADDRESS Address, ULONG Count)
 {
     NTSTATUS status;
 
-    ASSERT3U(Count, <=, MAXIMUM_MULTICAST_ADDRESS_COUNT);
-
-    status = VIF(UpdateMulticastAddresses,
-                 Adapter->VifInterface,
-                 Address,
-                 Count);
+    status = XENVIF_VIF(MacSetMulticastAddresses,
+                        &Adapter->VifInterface,
+                        Address,
+                        Count);
     if (!NT_SUCCESS(status))
         return NDIS_STATUS_INVALID_DATA;
 
@@ -1907,44 +2054,44 @@ SetPacketFilter(PADAPTER Adapter, PULONG PacketFilter)
         return NDIS_STATUS_INVALID_PARAMETER;
 
     if (*PacketFilter & NDIS_PACKET_TYPE_PROMISCUOUS) {
-        UnicastFilterLevel = MAC_FILTER_ALL;
-        MulticastFilterLevel = MAC_FILTER_ALL;
-        BroadcastFilterLevel = MAC_FILTER_ALL;
+        UnicastFilterLevel = XENVIF_MAC_FILTER_ALL;
+        MulticastFilterLevel = XENVIF_MAC_FILTER_ALL;
+        BroadcastFilterLevel = XENVIF_MAC_FILTER_ALL;
         goto done;
     }
 
     if (*PacketFilter & NDIS_PACKET_TYPE_DIRECTED)
-        UnicastFilterLevel = MAC_FILTER_MATCHING;
+        UnicastFilterLevel = XENVIF_MAC_FILTER_MATCHING;
     else
-        UnicastFilterLevel = MAC_FILTER_NONE;
+        UnicastFilterLevel = XENVIF_MAC_FILTER_NONE;
 
     if (*PacketFilter & NDIS_PACKET_TYPE_ALL_MULTICAST)
-        MulticastFilterLevel = MAC_FILTER_ALL;
+        MulticastFilterLevel = XENVIF_MAC_FILTER_ALL;
     else if (*PacketFilter & NDIS_PACKET_TYPE_MULTICAST)
-        MulticastFilterLevel = MAC_FILTER_MATCHING;
+        MulticastFilterLevel = XENVIF_MAC_FILTER_MATCHING;
     else
-        MulticastFilterLevel = MAC_FILTER_NONE;
+        MulticastFilterLevel = XENVIF_MAC_FILTER_NONE;
 
     if (*PacketFilter & NDIS_PACKET_TYPE_BROADCAST)
-        BroadcastFilterLevel = MAC_FILTER_ALL;
+        BroadcastFilterLevel = XENVIF_MAC_FILTER_ALL;
     else
-        BroadcastFilterLevel = MAC_FILTER_NONE;
+        BroadcastFilterLevel = XENVIF_MAC_FILTER_NONE;
 
 done:
-    VIF(UpdateFilterLevel,
-        Adapter->VifInterface,
-        ETHERNET_ADDRESS_UNICAST,
-        UnicastFilterLevel);
+    XENVIF_VIF(MacSetFilterLevel,
+               &Adapter->VifInterface,
+               ETHERNET_ADDRESS_UNICAST,
+               UnicastFilterLevel);
 
-    VIF(UpdateFilterLevel,
-        Adapter->VifInterface,
-        ETHERNET_ADDRESS_MULTICAST,
-        MulticastFilterLevel);
+    XENVIF_VIF(MacSetFilterLevel,
+               &Adapter->VifInterface,
+               ETHERNET_ADDRESS_MULTICAST,
+               MulticastFilterLevel);
 
-    VIF(UpdateFilterLevel,
-        Adapter->VifInterface,
-        ETHERNET_ADDRESS_BROADCAST,
-        BroadcastFilterLevel);
+    XENVIF_VIF(MacSetFilterLevel,
+               &Adapter->VifInterface,
+               ETHERNET_ADDRESS_BROADCAST,
+               BroadcastFilterLevel);
 
     return NDIS_STATUS_SUCCESS;
 }
@@ -2043,7 +2190,7 @@ AdapterSetInformation (
 
             bytesNeeded = sizeof(*offloadEncapsulation);
             if (informationBufferLength >= bytesNeeded) {
-                XENVIF_OFFLOAD_OPTIONS Options;
+                XENVIF_VIF_OFFLOAD_OPTIONS Options;
 
                 bytesRead = bytesNeeded;
                 offloadEncapsulation = informationBuffer;
@@ -2059,9 +2206,9 @@ AdapterSetInformation (
                         ndisStatus = NDIS_STATUS_INVALID_PARAMETER;
                 }
 
-                VIF(QueryOffloadOptions,
-                    Adapter->VifInterface,
-                    &Options);
+                XENVIF_VIF(TransmitterQueryOffloadOptions,
+                           &Adapter->VifInterface,
+                           &Options);
                 
                 Adapter->Transmitter->OffloadOptions.Value = 0;
                 Adapter->Transmitter->OffloadOptions.OffloadTagManipulation = 1;
@@ -2146,22 +2293,22 @@ AdapterSetInformation (
                     ndisStatus = NDIS_STATUS_INVALID_PARAMETER;
 
                 if (!no_change(offloadParameters->LsoV2IPv4)) {
-                    XENVIF_OFFLOAD_OPTIONS  Options;
+                    XENVIF_VIF_OFFLOAD_OPTIONS  Options;
 
-                    VIF(QueryOffloadOptions,
-                        Adapter->VifInterface,
-                        &Options);
+                    XENVIF_VIF(TransmitterQueryOffloadOptions,
+                               &Adapter->VifInterface,
+                               &Options);
 
                     if (!(Options.OffloadIpVersion4LargePacket))
                         ndisStatus = NDIS_STATUS_INVALID_PARAMETER;
                 }
 
                 if (!no_change(offloadParameters->LsoV2IPv6)) {
-                    XENVIF_OFFLOAD_OPTIONS  Options;
+                    XENVIF_VIF_OFFLOAD_OPTIONS  Options;
 
-                    VIF(QueryOffloadOptions,
-                        Adapter->VifInterface,
-                        &Options);
+                    XENVIF_VIF(TransmitterQueryOffloadOptions,
+                               &Adapter->VifInterface,
+                               &Options);
 
                     if (!(Options.OffloadIpVersion6LargePacket))
                         ndisStatus = NDIS_STATUS_INVALID_PARAMETER;
@@ -2409,7 +2556,7 @@ AdapterShutdown (
 // Stops transmission of new packets.
 // Stops received packet indication to NDIS.
 //
-static NDIS_STATUS
+NDIS_STATUS
 AdapterStop (
 IN  PADAPTER    Adapter
 )
@@ -2419,8 +2566,8 @@ IN  PADAPTER    Adapter
     if (!Adapter->Enabled)
         goto done;
 
-    VIF(Disable,
-        Adapter->VifInterface);
+    XENVIF_VIF(Disable,
+               &Adapter->VifInterface);
 
     Adapter->Enabled = FALSE;
 

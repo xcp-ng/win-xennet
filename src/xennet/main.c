@@ -32,6 +32,7 @@
 #include <version.h>
 
 #include "common.h"
+#include "registry.h"
 
 #pragma NDIS_INIT_FUNCTION(DriverEntry)
 
@@ -42,11 +43,20 @@
 static NDIS_HANDLE MiniportDriverHandle;
 
 extern MINIPORT_INITIALIZE MiniportInitialize;
+
 extern NDIS_STATUS 
 MiniportInitialize (
     IN  NDIS_HANDLE                        MiniportAdapterHandle,
     IN  NDIS_HANDLE                        MiniportDriverContext,
     IN  PNDIS_MINIPORT_INIT_PARAMETERS     MiniportInitParameters
+    );
+
+MINIPORT_HALT MiniportHalt;
+
+extern VOID 
+MiniportHalt (
+    IN  NDIS_HANDLE                        MiniportAdapterHandle,
+    IN  NDIS_HALT_ACTION                   HaltAction
     );
 
 typedef struct _XENNET_CONTEXT {
@@ -187,17 +197,32 @@ DriverEntry (
     PNDIS_CONFIGURATION_PARAMETER ParameterValue;
     ULONG FailCreateClose;
     ULONG FailDeviceControl;
+    NTSTATUS status;
 
     ExInitializeDriverRuntime(DrvRtPoolNxOptIn);
 
     Trace("====>\n");
 
-    Info("%s (%s)\n",
-         MAJOR_VERSION_STR "." MINOR_VERSION_STR "." MICRO_VERSION_STR "." BUILD_NUMBER_STR,
-         DAY_STR "/" MONTH_STR "/" YEAR_STR);
-
     if (*InitSafeBootMode > 0)
         return NDIS_STATUS_SUCCESS;
+
+    Info("XENNET %d.%d.%d (%d) (%02d.%02d.%04d)\n",
+         MAJOR_VERSION,
+         MINOR_VERSION,
+         MICRO_VERSION,
+         BUILD_NUMBER,
+         DAY,
+         MONTH,
+         YEAR);
+
+    status = RegistryInitialize(RegistryPath);
+
+    ndisStatus = (NT_SUCCESS(status)) ?
+                 NDIS_STATUS_SUCCESS :
+                 NDIS_STATUS_FAILURE;
+
+    if (ndisStatus != NDIS_STATUS_SUCCESS)
+        goto fail;
 
     //
     // Register miniport with NDIS.
@@ -217,7 +242,7 @@ DriverEntry (
     mpChars.CancelSendHandler = AdapterCancelSendNetBufferLists;
     mpChars.CheckForHangHandlerEx = AdapterCheckForHang;
     mpChars.InitializeHandlerEx = MiniportInitialize;
-    mpChars.HaltHandlerEx = AdapterHalt;
+    mpChars.HaltHandlerEx = MiniportHalt;
     mpChars.OidRequestHandler = AdapterOidRequest;    
     mpChars.PauseHandler = AdapterPause;      
     mpChars.DevicePnPEventNotifyHandler  = AdapterPnPEventHandler;
@@ -297,8 +322,11 @@ DriverEntry (
         DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = DispatchFail;
     }
 
-fail:
     Trace("<====\n");
+    return ndisStatus;
+
+fail:
+    Error("fail\n");
     return ndisStatus;
 }
 
@@ -311,8 +339,23 @@ DriverUnload (
 
     Trace("====>\n");
 
+    if (*InitSafeBootMode > 0)
+        goto done;
+
     if (MiniportDriverHandle)
         NdisMDeregisterMiniportDriver(MiniportDriverHandle);
 
+    RegistryTeardown();
+
+    Info("XENNET %d.%d.%d (%d) (%02d.%02d.%04d)\n",
+         MAJOR_VERSION,
+         MINOR_VERSION,
+         MICRO_VERSION,
+         BUILD_NUMBER,
+         DAY,
+         MONTH,
+         YEAR);
+
+done:
     Trace("<====\n");
 }

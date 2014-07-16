@@ -32,8 +32,8 @@
 #pragma once
 
 typedef struct _TRANSMITTER {
-    PADAPTER                Adapter;
-    XENVIF_OFFLOAD_OPTIONS  OffloadOptions;
+    PADAPTER                    Adapter;
+    XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
 } TRANSMITTER, *PTRANSMITTER;
 
 VOID 

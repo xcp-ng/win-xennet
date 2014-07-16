@@ -34,6 +34,8 @@
 
 #include <ntddk.h>
 
+#include "assert.h"
+
 #define	P2ROUNDUP(_x, _a)   \
         (-(-(_x) & -(_a)))
 
@@ -76,6 +78,32 @@ __ffs(
 #define __ffu(_mask)  \
         __ffs(~(_mask))
 
+static FORCEINLINE VOID
+__CpuId(
+    IN  ULONG   Leaf,
+    OUT PULONG  EAX OPTIONAL,
+    OUT PULONG  EBX OPTIONAL,
+    OUT PULONG  ECX OPTIONAL,
+    OUT PULONG  EDX OPTIONAL
+    )
+{
+    ULONG       Value[4] = {0};
+
+    __cpuid(Value, Leaf);
+
+    if (EAX)
+        *EAX = Value[0];
+
+    if (EBX)
+        *EBX = Value[1];
+
+    if (ECX)
+        *ECX = Value[2];
+
+    if (EDX)
+        *EDX = Value[3];
+}
+
 static FORCEINLINE LONG
 __InterlockedAdd(
     IN  LONG    *Value,
@@ -108,6 +136,208 @@ __InterlockedSubtract(
     } while (InterlockedCompareExchange(Value, New, Old) != Old);
 
     return New;
+}
+
+typedef struct _NON_PAGED_BUFFER_HEADER {
+    SIZE_T  Length;
+    ULONG   Tag;
+} NON_PAGED_BUFFER_HEADER, *PNON_PAGED_BUFFER_HEADER;
+
+typedef struct _NON_PAGED_BUFFER_TRAILER {
+    ULONG   Tag;
+} NON_PAGED_BUFFER_TRAILER, *PNON_PAGED_BUFFER_TRAILER;
+
+static FORCEINLINE PVOID
+__AllocateNonPagedPoolWithTag(
+    IN  SIZE_T                  Length,
+    IN  ULONG                   Tag
+    )
+{
+    PUCHAR                      Buffer;
+    PNON_PAGED_BUFFER_HEADER    Header;
+    PNON_PAGED_BUFFER_TRAILER   Trailer;
+
+    ASSERT(Length != 0);
+
+    Buffer = ExAllocatePoolWithTag(NonPagedPool,
+                                   sizeof (NON_PAGED_BUFFER_HEADER) +
+                                   Length +
+                                   sizeof (NON_PAGED_BUFFER_TRAILER),
+                                   Tag);
+    if (Buffer == NULL)
+        goto done;
+
+    RtlZeroMemory(Buffer, 
+                  sizeof (NON_PAGED_BUFFER_HEADER) +
+                  Length +
+                  sizeof (NON_PAGED_BUFFER_TRAILER));
+
+    Header = (PNON_PAGED_BUFFER_HEADER)Buffer;
+    Header->Length = Length;
+    Header->Tag = Tag;
+
+    Buffer += sizeof (NON_PAGED_BUFFER_HEADER);
+
+    Trailer = (PNON_PAGED_BUFFER_TRAILER)(Buffer + Length);
+    Trailer->Tag = Tag;
+
+done:
+    return Buffer;
+}
+
+static FORCEINLINE VOID
+__FreePoolWithTag(
+    IN  PVOID                   _Buffer,
+    IN  ULONG                   Tag
+    )
+{
+    PUCHAR                      Buffer = _Buffer;
+    SIZE_T                      Length;
+    PNON_PAGED_BUFFER_HEADER    Header;
+    PNON_PAGED_BUFFER_TRAILER   Trailer;
+
+    ASSERT(Buffer != NULL);
+
+    Buffer -= sizeof (NON_PAGED_BUFFER_HEADER);
+
+    Header = (PNON_PAGED_BUFFER_HEADER)Buffer;
+    ASSERT3U(Tag, ==, Header->Tag);
+    Length = Header->Length;
+
+    Buffer += sizeof (NON_PAGED_BUFFER_HEADER);
+
+    Trailer = (PNON_PAGED_BUFFER_TRAILER)(Buffer + Length);
+    ASSERT3U(Tag, ==, Trailer->Tag);
+
+    Buffer -= sizeof (NON_PAGED_BUFFER_HEADER);
+
+    RtlFillMemory(Buffer, 
+                  sizeof (NON_PAGED_BUFFER_HEADER) +
+                  Length +
+                  sizeof (NON_PAGED_BUFFER_TRAILER),
+                  0xAA);
+
+    ExFreePoolWithTag(Buffer, Tag);
+}
+
+static FORCEINLINE PMDL
+__AllocatePage(
+    VOID
+    )
+{
+    PHYSICAL_ADDRESS    LowAddress;
+    PHYSICAL_ADDRESS    HighAddress;
+    LARGE_INTEGER       SkipBytes;
+    SIZE_T              TotalBytes;
+    PMDL                Mdl;
+    PUCHAR              MdlMappedSystemVa;
+    NTSTATUS            status;
+
+    LowAddress.QuadPart = 0ull;
+    HighAddress.QuadPart = ~0ull;
+    SkipBytes.QuadPart = 0ull;
+    TotalBytes = (SIZE_T)PAGE_SIZE;
+
+    Mdl = MmAllocatePagesForMdlEx(LowAddress,
+                                  HighAddress,
+                                  SkipBytes,
+                                  TotalBytes,
+                                  MmCached,
+                                  0);
+
+    status = STATUS_NO_MEMORY;
+    if (Mdl == NULL)
+        goto fail1;
+
+    ASSERT((Mdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA |
+                             MDL_PARTIAL_HAS_BEEN_MAPPED |
+                             MDL_PARTIAL |
+                             MDL_PARENT_MAPPED_SYSTEM_VA |
+                             MDL_SOURCE_IS_NONPAGED_POOL |
+                             MDL_IO_SPACE)) == 0);
+
+    MdlMappedSystemVa = MmMapLockedPagesSpecifyCache(Mdl,
+                                                     KernelMode,
+						                             MmCached,   
+						                             NULL,
+						                             FALSE,
+						                             NormalPagePriority);
+
+    status = STATUS_UNSUCCESSFUL;
+    if (MdlMappedSystemVa == NULL)
+        goto fail2;
+
+    ASSERT3P(MdlMappedSystemVa, ==, Mdl->MappedSystemVa);
+
+    RtlZeroMemory(MdlMappedSystemVa, PAGE_SIZE);
+
+    return Mdl;
+
+fail2:
+    Error("fail2\n");
+
+    MmFreePagesFromMdl(Mdl);
+    ExFreePool(Mdl);
+
+fail1:
+    Error("fail1 (%08x)\n", status);
+
+    return NULL;
+}
+
+static FORCEINLINE VOID
+__FreePage(
+    IN	PMDL	Mdl
+    )
+{
+    PUCHAR	MdlMappedSystemVa;
+
+    ASSERT(Mdl->MdlFlags & MDL_MAPPED_TO_SYSTEM_VA);
+    MdlMappedSystemVa = Mdl->MappedSystemVa;
+
+    RtlFillMemory(MdlMappedSystemVa, PAGE_SIZE, 0xAA);
+    
+    MmUnmapLockedPages(MdlMappedSystemVa, Mdl);
+
+    MmFreePagesFromMdl(Mdl);
+}
+
+static FORCEINLINE PCHAR
+__strtok_r(
+    IN      PCHAR   Buffer,
+    IN      PCHAR   Delimiter,
+    IN OUT  PCHAR   *Context
+    )
+{
+    PCHAR           Token;
+    PCHAR           End;
+
+    if (Buffer != NULL)
+        *Context = Buffer;
+
+    Token = *Context;
+
+    if (Token == NULL)
+        return NULL;
+
+    while (*Token != L'\0' &&
+           strchr(Delimiter, *Token) != NULL)
+        Token++;
+
+    if (*Token == L'\0')
+        return NULL;
+
+    End = Token + 1;
+    while (*End != L'\0' &&
+           strchr(Delimiter, *End) == NULL)
+        End++;
+
+    if (*End != L'\0')
+        *End++ = L'\0';
+
+    *Context = End;
+
+    return Token;
 }
 
 #endif  // _UTIL_H

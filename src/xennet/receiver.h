@@ -32,12 +32,12 @@
 #pragma once
 
 typedef struct _RECEIVER {
-    NDIS_HANDLE             NetBufferListPool;
-    PNET_BUFFER_LIST        PutList;
-    PNET_BUFFER_LIST        GetList[MAXIMUM_PROCESSORS];
-    LONG                    InNDIS;
-    LONG                    InNDISMax;
-    XENVIF_OFFLOAD_OPTIONS  OffloadOptions;
+    NDIS_HANDLE                 NetBufferListPool;
+    PNET_BUFFER_LIST            PutList;
+    PNET_BUFFER_LIST            GetList[MAXIMUM_PROCESSORS];
+    LONG                        InNDIS;
+    LONG                        InNDISMax;
+    XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
 } RECEIVER, *PRECEIVER;
 
 VOID

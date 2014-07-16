@@ -190,9 +190,12 @@ __ReceiverReturnNetBufferLists(
     )
 {
     PADAPTER                Adapter;
+    LIST_ENTRY              List;
     ULONG                   Count;
 
     Adapter = CONTAINING_RECORD(Receiver, ADAPTER, Receiver);
+
+    InitializeListHead(&List);
 
     Count = 0;
     while (NetBufferList != NULL) {
@@ -213,13 +216,16 @@ __ReceiverReturnNetBufferLists(
 
         Packet = CONTAINING_RECORD(Mdl, XENVIF_RECEIVER_PACKET, Mdl);
 
-        VIF(ReturnPacket,
-            Adapter->VifInterface,
-            Packet);
+        InsertTailList(&List, &Packet->ListEntry);
 
         Count++;
         NetBufferList = Next;
     }
+
+    if (Count != 0)
+        XENVIF_VIF(ReceiverReturnPackets,
+                   &Adapter->VifInterface,
+                   &List);
 
     return Count;
 }
@@ -245,7 +251,7 @@ ReceiverReceivePacket(
     IN  PMDL                                    Mdl,
     IN  ULONG                                   Offset,
     IN  ULONG                                   Length,
-    IN  XENVIF_CHECKSUM_FLAGS                   Flags,
+    IN  XENVIF_PACKET_CHECKSUM_FLAGS            Flags,
     IN  USHORT                                  TagControlInformation
     )
 {
@@ -371,10 +377,11 @@ again:
     while (!IsListEmpty(List)) {
         PLIST_ENTRY                     ListEntry;
         PXENVIF_RECEIVER_PACKET         Packet;
+        PXENVIF_PACKET_INFO             Info;
         PMDL                            Mdl;
         ULONG                           Offset;
         ULONG                           Length;
-        XENVIF_CHECKSUM_FLAGS           Flags;
+        XENVIF_PACKET_CHECKSUM_FLAGS    Flags;
         USHORT                          TagControlInformation;
         PNET_BUFFER_LIST                NetBufferList;
 
@@ -392,7 +399,10 @@ again:
         Offset = Packet->Offset;
         Length = Packet->Length;
         Flags = Packet->Flags;
-        TagControlInformation = Packet->TagControlInformation;
+
+        Info = Packet->Info;
+
+        TagControlInformation = Info->TagControlInformation;
 
         NetBufferList = ReceiverReceivePacket(Receiver, Mdl, Offset, Length, Flags, TagControlInformation);
 
@@ -401,9 +411,14 @@ again:
             TailNetBufferList = &NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
             Count++;
         } else {
-            VIF(ReturnPacket,
-                Adapter->VifInterface,
-                Packet);
+            LIST_ENTRY  List;
+
+            InitializeListHead(&List);
+            InsertTailList(&List, &Packet->ListEntry);
+
+            XENVIF_VIF(ReceiverReturnPackets,
+                       &Adapter->VifInterface,
+                       &List);
         }
     }
 

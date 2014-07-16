@@ -56,7 +56,7 @@ typedef struct _PROPERTIES {
 
 struct _ADAPTER {
     LIST_ENTRY              ListEntry;
-    PXENVIF_VIF_INTERFACE   VifInterface;
+    XENVIF_VIF_INTERFACE    VifInterface;
     BOOLEAN                 AcquiredInterfaces;
     ULONG                   MaximumFrameSize;
     ULONG                   CurrentLookahead;
@@ -91,15 +91,8 @@ AdapterCheckForHang (
     );
 
 VOID
-AdapterDelete (
-    IN  OUT PADAPTER* Adapter
-    );
-
-MINIPORT_HALT AdapterHalt;
-VOID 
-AdapterHalt (
-    IN  NDIS_HANDLE         NdisHandle,
-    IN  NDIS_HALT_ACTION    HaltAction
+AdapterCleanup (
+    IN PADAPTER Adapter
     );
 
 NDIS_STATUS 
@@ -160,7 +153,13 @@ AdapterSendNetBufferLists (
     IN  ULONG               SendFlags
     );
 
+NDIS_STATUS
+AdapterStop (
+    IN  PADAPTER    Adapter
+    );
+
 MINIPORT_SHUTDOWN AdapterShutdown;
+
 VOID 
 AdapterShutdown (
     IN  NDIS_HANDLE             MiniportAdapterContext,

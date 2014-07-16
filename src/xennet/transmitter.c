@@ -49,18 +49,25 @@ TransmitterEnable(
     IN  PTRANSMITTER    Transmitter
     )
 {
-    XENVIF_TRANSMITTER_PACKET_METADATA  Metadata;
+    PADAPTER            Adapter = Transmitter->Adapter;
 
-    Metadata.OffsetOffset = (LONG_PTR)&NET_BUFFER_CURRENT_MDL_OFFSET((PNET_BUFFER)NULL) -
-                            (LONG_PTR)&NET_BUFFER_MINIPORT_RESERVED((PNET_BUFFER)NULL);
-    Metadata.LengthOffset = (LONG_PTR)&NET_BUFFER_DATA_LENGTH((PNET_BUFFER)NULL) -
-                            (LONG_PTR)&NET_BUFFER_MINIPORT_RESERVED((PNET_BUFFER)NULL);
-    Metadata.MdlOffset = (LONG_PTR)&NET_BUFFER_CURRENT_MDL((PNET_BUFFER)NULL) -
-                         (LONG_PTR)&NET_BUFFER_MINIPORT_RESERVED((PNET_BUFFER)NULL);
+    (VOID) XENVIF_VIF(TransmitterSetPacketOffset,
+                      &Adapter->VifInterface,
+                      XENVIF_TRANSMITTER_PACKET_OFFSET_OFFSET,
+                      (LONG_PTR)&NET_BUFFER_CURRENT_MDL_OFFSET((PNET_BUFFER)NULL) -
+                      (LONG_PTR)&NET_BUFFER_MINIPORT_RESERVED((PNET_BUFFER)NULL));
 
-    VIF(UpdatePacketMetadata,
-        Transmitter->Adapter->VifInterface,
-        &Metadata);
+    (VOID) XENVIF_VIF(TransmitterSetPacketOffset,
+                      &Adapter->VifInterface,
+                      XENVIF_TRANSMITTER_PACKET_LENGTH_OFFSET,
+                      (LONG_PTR)&NET_BUFFER_DATA_LENGTH((PNET_BUFFER)NULL) -
+                      (LONG_PTR)&NET_BUFFER_MINIPORT_RESERVED((PNET_BUFFER)NULL));
+
+    (VOID) XENVIF_VIF(TransmitterSetPacketOffset,
+                      &Adapter->VifInterface,
+                      XENVIF_TRANSMITTER_PACKET_MDL_OFFSET,
+                      (LONG_PTR)&NET_BUFFER_CURRENT_MDL((PNET_BUFFER)NULL) -
+                      (LONG_PTR)&NET_BUFFER_MINIPORT_RESERVED((PNET_BUFFER)NULL));
 }
 
 VOID 
@@ -142,6 +149,7 @@ TransmitterSendNetBufferLists(
     IN  ULONG                   SendFlags
     )
 {
+    PADAPTER                    Adapter = Transmitter->Adapter;
     PXENVIF_TRANSMITTER_PACKET  HeadPacket;
     PXENVIF_TRANSMITTER_PACKET  *TailPacket;
     KIRQL                       Irql;
@@ -249,9 +257,9 @@ TransmitterSendNetBufferLists(
     if (HeadPacket != NULL) {
         NTSTATUS    status; 
 
-        status = VIF(QueuePackets,
-                     Transmitter->Adapter->VifInterface,
-                     HeadPacket);
+        status = XENVIF_VIF(TransmitterQueuePackets,
+                            &Adapter->VifInterface,
+                            HeadPacket);
         if (!NT_SUCCESS(status))
             TransmitterAbortPackets(Transmitter, HeadPacket);
     }
@@ -265,6 +273,7 @@ TransmitterCompleteNetBufferList(
     IN  PNET_BUFFER_LIST                                NetBufferList
     )
 {
+    PADAPTER                                            Adapter = Transmitter->Adapter;
     PNDIS_TCP_LARGE_SEND_OFFLOAD_NET_BUFFER_LIST_INFO   LargeSendInfo;
 
     ASSERT3P(NET_BUFFER_LIST_NEXT_NBL(NetBufferList), ==, NULL);
@@ -277,7 +286,7 @@ TransmitterCompleteNetBufferList(
 
     NET_BUFFER_LIST_STATUS(NetBufferList) = NDIS_STATUS_SUCCESS;
 
-    NdisMSendNetBufferListsComplete(Transmitter->Adapter->NdisAdapterHandle,
+    NdisMSendNetBufferListsComplete(Adapter->NdisAdapterHandle,
                                     NetBufferList,
                                     NDIS_SEND_COMPLETE_FLAGS_DISPATCH_LEVEL);
 }

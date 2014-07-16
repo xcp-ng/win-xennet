@@ -60,9 +60,9 @@ xennet_coinst_@MAJOR_VERSION@_@MINOR_VERSION@_@MICRO_VERSION@_@BUILD_NUMBER@.dll
 ; DisplayName		Section		DeviceID
 ; -----------		-------		--------
 
-%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_XSC000&DEV_NET&REV_00000000
-%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_XS0001&DEV_NET&REV_00000000
-%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_XS0002&DEV_NET&REV_00000000
+%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_XSC000&DEV_NET&REV_00000001
+%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_XS0001&DEV_NET&REV_00000001
+%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_XS0002&DEV_NET&REV_00000001
 
 [XenNet_Inst] 
 Characteristics=0x84
@@ -167,6 +167,10 @@ StartType=%SERVICE_DEMAND_START%
 ErrorControl=%SERVICE_ERROR_NORMAL% 
 ServiceBinary=%12%\xennet.sys 
 LoadOrderGroup="NDIS"
+AddReg = XenNet_BootFlags
+
+[XenNet_BootFlags]
+HKR,"BootFlags",,0x00010003,0x81
 
 [XenNet_EventLog]
 AddReg=XenNet_EventLog_AddReg
