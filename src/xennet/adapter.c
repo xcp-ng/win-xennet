@@ -977,7 +977,7 @@ AdapterQueryInformation (
             break;
 
         case OID_GEN_VENDOR_DESCRIPTION:
-            info = "Citrix";
+            info = COMPANY_NAME_STR;
             bytesAvailable = (ULONG)strlen(info) + 1;
             break;
 

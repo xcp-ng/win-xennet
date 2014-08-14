@@ -1,12 +1,12 @@
-XenNet - The XenServer Paravitual Network Device Driver for Windows
-===================================================================
+XenNet - The Xen Paravitual Network Device Driver for Windows
+=============================================================
 
 The XenNet package consists of a single device driver:
 
 *    xennet.sys is an NDIS6 miniport driver which attaches to a virtual
-     device created by XenVif (see https://github.com/xenserver/win-xenvif)
-     and uses the *netif* wire protocol implementation in XenVif to
-     interface to a paravirtual network backend. 
+     device created by XenVif and uses the *netif* wire protocol
+     implementation in XenVif to interface to a paravirtual network
+     backend. 
 
 Quick Start Guide
 =================
