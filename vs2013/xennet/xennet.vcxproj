@@ -1,0 +1,131 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="..\configs.props" />
+  <PropertyGroup Label="PropertySheets">
+    <ConfigurationType>Driver</ConfigurationType>
+    <DriverType>WDM</DriverType>
+  </PropertyGroup>
+  <PropertyGroup Label="Globals">
+    <Configuration>Windows Vista Debug</Configuration>
+    <Platform Condition="'$(Platform)' == ''">Win32</Platform>
+    <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Windows 8 Release|x64'">
+    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Windows 8 Release|Win32'">
+    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Windows Vista Debug|x64'">
+    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Windows Vista Debug|Win32'">
+    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Windows Vista Release|x64'">
+    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Windows Vista Release|Win32'">
+    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Windows 7 Release|x64'">
+    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Windows 7 Release|Win32'">
+    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Windows8 Debug|x64'">
+    <PlatformToolset>v120</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Windows 7 Debug|Win32'">
+    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Windows 7 Debug|x64'">
+    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Windows 8 Debug|Win32'">
+    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Windows 8 Debug|x64'">
+    <PlatformToolset>WindowsKernelModeDriver8.1</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{97D9942B-5EA3-488C-B512-C96E5D077F8E}</ProjectGuid>
+  </PropertyGroup>
+  <Import Project="..\targets.props" />
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <IncludePath>..\..\include;$(IncludePath)</IncludePath>
+    <RunCodeAnalysis>true</RunCodeAnalysis>
+    <EnableInf2cat>false</EnableInf2cat>
+    <CustomBuildBeforeTargets>ClCompile;StampInf</CustomBuildBeforeTargets>
+    <IntDir>..\$(ProjectName)\$(ConfigurationName)\$(Platform)\</IntDir>
+    <OutDir>..\$(ConfigurationName)\$(Platform)\</OutDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <CustomBuildStep>
+      <Command>echo "Build Inf"
+                powershell -Command "(Get-Content ..\..\src\xennet.inf) -replace '@MAJOR_VERSION@', '$(MAJOR_VERSION)' -replace '@MINOR_VERSION@', '$(MINOR_VERSION)' -replace '@MICRO_VERSION@','$(MICRO_VERSION)' -replace '@BUILD_NUMBER@','$(BUILD_NUMBER)' -replace '@COMPANY_NAME@','$(COMPANY_NAME)' -replace '@PRODUCT_NAME@','$(PRODUCT_NAME)' | Set-Content ..\xennet.inf"
+                echo "Build version header"
+                powershell -Command "(Get-Content ..\..\include\version.hx) -replace '@MAJOR_VERSION@', '$(MAJOR_VERSION)' -replace '@MINOR_VERSION@', '$(MINOR_VERSION)' -replace '@MICRO_VERSION@','$(MICRO_VERSION)' -replace '@BUILD_NUMBER@','$(BUILD_NUMBER)' -replace '@COMPANY_NAME@','$(COMPANY_NAME)' -replace '@PRODUCT_NAME@','$(PRODUCT_NAME)' -replace '@DAY@',%24(Get-Date -format %25%25d) -replace '@MONTH@',%24(Get-Date -format %25%25M) -replace '@YEAR@',%24(Get-Date -format yyyy) | Set-Content ..\..\include\version.h"
+            </Command>
+      <Outputs>..\xennet.inf;..\..\include\version.h</Outputs>
+      <Inputs>..\..\src\xennet.inf;..\..\include\version.hx</Inputs>
+    </CustomBuildStep>
+    <ClCompile>
+      <PreprocessorDefinitions>__MODULE__="XENNET";NDIS_MINIPORT_DRIVER;NDIS60_MINIPORT=1;POOL_NX_OPTIN=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <WarningLevel>EnableAllWarnings</WarningLevel>
+      <DisableSpecificWarnings>4711;4548;4820;4668;4255;6001;6054;28196;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <EnablePREfast>true</EnablePREfast>
+    </ClCompile>
+    <Link>
+      <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+      <AdditionalDependencies>$(DDK_LIB_PATH)\ndis.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <EnableCOMDATFolding>false</EnableCOMDATFolding>
+    </Link>
+    <Inf>
+      <SpecifyArchitecture>true</SpecifyArchitecture>
+      <SpecifyDriverVerDirectiveVersion>true</SpecifyDriverVerDirectiveVersion>
+      <TimeStamp>$(MAJOR_VERSION).$(MINOR_VERSION).$(MICRO_VERSION).$(BUILD_NUMBER)</TimeStamp>
+      <EnableVerbose>true</EnableVerbose>
+    </Inf>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Platform)'=='Win32'">
+    <ClCompile>
+      <PreprocessorDefinitions>__i386__;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Inf>
+      <Architecture>x86</Architecture>
+    </Inf>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Platform)'=='x64'">
+    <ClCompile>
+      <PreprocessorDefinitions>__x86_64__;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Inf>
+      <Architecture>amd64</Architecture>
+    </Inf>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <FilesToPackage Include="$(TargetPath)" />
+    <FilesToPackage Include="$(OutDir)$(TargetName).pdb" />
+    <FilesToPackage Include="@(Inf->'%(CopyOutput)')" Condition="'@(Inf)'!=''" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="../../src/xennet/registry.c" />
+    <ClCompile Include="../../src/xennet/adapter.c" />
+    <ClCompile Include="../../src/xennet/main.c" />
+    <ClCompile Include="../../src/xennet/miniport.c" />
+    <ClCompile Include="../../src/xennet/receiver.c" />
+    <ClCompile Include="../../src/xennet/transmitter.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\..\src\xennet\xennet.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Inf Include="..\xennet.inf" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
