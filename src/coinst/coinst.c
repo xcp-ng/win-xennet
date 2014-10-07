@@ -1218,6 +1218,16 @@ CopyValues(
     Log("DESTINATION: %s", DestinationKeyName);
     Log("SOURCE: %s", SourceKeyName);
 
+    Error = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+                         SourceKeyName,
+                         0,
+                         KEY_ALL_ACCESS,
+                         &SourceKey);
+    if (Error != ERROR_SUCCESS) {
+        SetLastError(Error);
+        goto fail1;
+    }
+    
     Error = RegCreateKeyEx(HKEY_LOCAL_MACHINE,
                            DestinationKeyName,
                            0,
@@ -1229,23 +1239,13 @@ CopyValues(
                            NULL);
     if (Error != ERROR_SUCCESS) {
         SetLastError(Error);
-        goto fail1;
-    }
-
-    Error = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
-                         SourceKeyName,
-                         0,
-                         KEY_ALL_ACCESS,
-                         &SourceKey);
-    if (Error != ERROR_SUCCESS) {
-        SetLastError(Error);
         goto fail2;
     }
-    
+
     CopyKeyValues(DestinationKey, SourceKey);
 
-    RegCloseKey(SourceKey);
     RegCloseKey(DestinationKey);
+    RegCloseKey(SourceKey);
 
     Log("<====");
 
@@ -1254,7 +1254,7 @@ CopyValues(
 fail2:
     Log("fail2");
 
-    RegCloseKey(DestinationKey);
+    RegCloseKey(SourceKey);
 
 fail1:
     Error = GetLastError();
@@ -1379,6 +1379,19 @@ CopyIpVersion6Addresses(
     Log("DESTINATION: %s\\%s", DestinationKeyName, DestinationValueName);
     Log("SOURCE: %s\\%s", SourceKeyName, SourceValueName);
 
+    Error = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+                         SourceKeyName,
+                         0,
+                         KEY_ALL_ACCESS,
+                         &SourceKey);
+    if (Error != ERROR_SUCCESS) {
+        if (Error == ERROR_FILE_NOT_FOUND)
+            goto done;
+
+        SetLastError(Error);
+        goto fail1;
+    }
+
     Error = RegCreateKeyEx(HKEY_LOCAL_MACHINE,
                            DestinationKeyName,
                            0,
@@ -1388,16 +1401,6 @@ CopyIpVersion6Addresses(
                            NULL,
                            &DestinationKey,
                            NULL);
-    if (Error != ERROR_SUCCESS) {
-        SetLastError(Error);
-        goto fail1;
-    }
-
-    Error = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
-                         SourceKeyName,
-                         0,
-                         KEY_ALL_ACCESS,
-                         &SourceKey);
     if (Error != ERROR_SUCCESS) {
         SetLastError(Error);
         goto fail2;
@@ -1483,8 +1486,8 @@ CopyIpVersion6Addresses(
     free(Value);
     free(Name);
 
-    RegCloseKey(SourceKey);
     RegCloseKey(DestinationKey);
+    RegCloseKey(SourceKey);
 
 done:
 
@@ -1509,12 +1512,12 @@ fail4:
 fail3:
     Log("fail3");
 
-    RegCloseKey(SourceKey);
+    RegCloseKey(DestinationKey);
 
 fail2:
     Log("fail2");
 
-    RegCloseKey(DestinationKey);
+    RegCloseKey(SourceKey);
 
 fail1:
     Error = GetLastError();
