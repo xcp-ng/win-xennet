@@ -29,47 +29,47 @@
  * SUCH DAMAGE.
  */
 
-#pragma once
+#ifndef _XENNET_TRANSMITTER_H_
+#define _XENNET_TRANSMITTER_H_
 
-typedef struct _TRANSMITTER {
-    PADAPTER                    Adapter;
-    XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
-} TRANSMITTER, *PTRANSMITTER;
+#include <ndis.h>
 
-VOID 
-TransmitterCleanup (
-    IN OUT PTRANSMITTER* Transmitter
+typedef struct _XENNET_TRANSMITTER XENNET_TRANSMITTER, *PXENNET_TRANSMITTER;
+
+#include "adapter.h"
+extern NDIS_STATUS
+TransmitterInitialize(
+    IN  PXENNET_ADAPTER     Adapter,
+    OUT PXENNET_TRANSMITTER *Transmitter
     );
 
-NDIS_STATUS
-TransmitterInitialize (
-    IN  PTRANSMITTER    Transmitter,
-    IN  PADAPTER        Adapter
+extern VOID
+TransmitterTeardown(
+    IN  PXENNET_TRANSMITTER Transmitter
     );
 
-VOID
-TransmitterEnable (
-    IN  PTRANSMITTER    Transmitter
+extern VOID
+TransmitterEnable(
+    IN  PXENNET_TRANSMITTER Transmitter
     );
 
-VOID 
-TransmitterDelete (
-    IN OUT PTRANSMITTER* Transmitter
-    );
-
-VOID
+extern VOID
 TransmitterSendNetBufferLists (
-    IN  PTRANSMITTER        Transmitter,
+    IN  PXENNET_TRANSMITTER Transmitter,
     IN  PNET_BUFFER_LIST    NetBufferList,
     IN  NDIS_PORT_NUMBER    PortNumber,
     IN  ULONG               SendFlags
     );
 
-VOID
+extern VOID
 TransmitterCompletePackets(
-    IN  PTRANSMITTER                Transmitter,
+    IN  PXENNET_TRANSMITTER         Transmitter,
     IN  PXENVIF_TRANSMITTER_PACKET  Packet
     );
 
-void TransmitterPause(PTRANSMITTER Transmitter);
-void TransmitterUnpause(PTRANSMITTER Transmitter);
+extern PXENVIF_VIF_OFFLOAD_OPTIONS
+TransmitterOffloadOptions(
+    IN  PXENNET_TRANSMITTER Transmitter
+    );
+
+#endif // _XENNET_TRANSMITTER_H_

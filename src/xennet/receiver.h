@@ -29,49 +29,41 @@
  * SUCH DAMAGE.
  */
 
-#pragma once
+#ifndef _XENNET_RECEIVER_H_
+#define _XENNET_RECEIVER_H_
 
-typedef struct _RECEIVER {
-    NDIS_HANDLE                 NetBufferListPool;
-    PNET_BUFFER_LIST            PutList;
-    PNET_BUFFER_LIST            GetList[MAXIMUM_PROCESSORS];
-    LONG                        InNDIS;
-    LONG                        InNDISMax;
-    XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
-} RECEIVER, *PRECEIVER;
+#include <ndis.h>
 
-VOID
-ReceiverDebugDump (
-    IN PRECEIVER Receiver
+typedef struct _XENNET_RECEIVER XENNET_RECEIVER, *PXENNET_RECEIVER;
+
+#include "adapter.h"
+extern NDIS_STATUS
+ReceiverInitialize(
+    IN  PXENNET_ADAPTER     Adapter,
+    OUT PXENNET_RECEIVER    *Receiver
     );
 
-VOID 
-ReceiverCleanup (
-    IN  PRECEIVER Receiver
+extern VOID
+ReceiverTeardown(
+    IN  PXENNET_RECEIVER    Receiver
     );
 
-VOID
-ReceiverHandleNotification (
-    IN  PRECEIVER Receiver
-    );
-
-NDIS_STATUS
-ReceiverInitialize (
-    IN  PRECEIVER   Receiver
-    );
-
-VOID 
-ReceiverReturnNetBufferLists (
-    IN  PRECEIVER           Receiver,
+extern VOID
+ReceiverReturnNetBufferLists(
+    IN  PXENNET_RECEIVER    Receiver,
     IN  PNET_BUFFER_LIST    NetBufferList,
     IN  ULONG               ReturnFlags
     );
 
-VOID
-ReceiverWaitForPacketReturn(
-    IN  PRECEIVER   Receiver,
-    IN  BOOLEAN     Locked
+extern VOID
+ReceiverReceivePackets(
+    IN  PXENNET_RECEIVER    Receiver,
+    IN  PLIST_ENTRY         List
     );
 
-void ReceiverPause(PRECEIVER receiver);
-void ReceiverUnpause(PRECEIVER receiver);
+extern PXENVIF_VIF_OFFLOAD_OPTIONS
+ReceiverOffloadOptions(
+    IN  PXENNET_RECEIVER    Receiver
+    );
+
+#endif // _XENNET_RECEIVER_H_

@@ -29,100 +29,35 @@
  * SUCH DAMAGE.
  */
 
-#include "common.h"
+#include "receiver.h"
+#include "adapter.h"
+#include <util.h>
+#include "dbg_print.h"
+#include "assert.h"
 
-#pragma warning(disable:4711)
+struct _XENNET_RECEIVER {
+    PXENNET_ADAPTER             Adapter;
+    NDIS_HANDLE                 NetBufferListPool;
+    PNET_BUFFER_LIST            PutList;
+    PNET_BUFFER_LIST            GetList[MAXIMUM_PROCESSORS];
+    LONG                        InNDIS;
+    LONG                        InNDISMax;
+    XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
+};
 
-NDIS_STATUS
-ReceiverInitialize (
-    IN  PRECEIVER                   Receiver
+#define RECEIVER_POOL_TAG       'RteN'
+#define IN_NDIS_MAX             1024
+
+static PNET_BUFFER_LIST
+__ReceiverAllocateNetBufferList(
+    IN  PXENNET_RECEIVER    Receiver,
+    IN  PMDL                Mdl,
+    IN  ULONG               Offset,
+    IN  ULONG               Length
     )
 {
-    PADAPTER                        Adapter;
-    NDIS_STATUS                     ndisStatus = NDIS_STATUS_SUCCESS;
-    NET_BUFFER_LIST_POOL_PARAMETERS poolParameters;
-    ULONG                           Cpu;
-
-    Receiver->PutList = NULL;
-    for (Cpu = 0; Cpu < MAXIMUM_PROCESSORS; Cpu++)
-        Receiver->GetList[Cpu] = NULL;
-
-    Adapter = CONTAINING_RECORD(Receiver, ADAPTER, Receiver);
-
-    NdisZeroMemory(&poolParameters, sizeof(NET_BUFFER_LIST_POOL_PARAMETERS));
-    poolParameters.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
-    poolParameters.Header.Revision =
-        NET_BUFFER_LIST_POOL_PARAMETERS_REVISION_1;
-    poolParameters.Header.Size = sizeof(poolParameters);
-    poolParameters.ProtocolId = 0;
-    poolParameters.ContextSize = 0;
-    poolParameters.fAllocateNetBuffer = TRUE;
-    poolParameters.PoolTag = ' TEN';
-
-    Receiver->NetBufferListPool =
-        NdisAllocateNetBufferListPool(Adapter->NdisAdapterHandle,
-                                      &poolParameters);
-
-    if (!Receiver->NetBufferListPool)
-        ndisStatus = NDIS_STATUS_RESOURCES;
-
-    return ndisStatus;
-}
-
-VOID 
-ReceiverCleanup (
-    IN  PRECEIVER       Receiver
-    )
-{
-    ULONG               Cpu;
-    PNET_BUFFER_LIST    NetBufferList;
-
-    ASSERT(Receiver != NULL);
-
-    for (Cpu = 0; Cpu < MAXIMUM_PROCESSORS; Cpu++) {
-        NetBufferList = Receiver->GetList[Cpu];
-        while (NetBufferList != NULL) {
-            PNET_BUFFER_LIST    Next;
-
-            Next = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
-            NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
-
-            NdisFreeNetBufferList(NetBufferList);
-
-            NetBufferList = Next;
-        }
-    }
-
-    NetBufferList = Receiver->PutList;
-    while (NetBufferList != NULL) {
-        PNET_BUFFER_LIST    Next;
-
-        Next = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
-        NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
-
-        NdisFreeNetBufferList(NetBufferList);
-
-        NetBufferList = Next;
-    }
-
-    if (Receiver->NetBufferListPool) {
-        NdisFreeNetBufferListPool(Receiver->NetBufferListPool);
-        Receiver->NetBufferListPool = NULL;
-    }
-
-    return;
-}
-
-PNET_BUFFER_LIST
-ReceiverAllocateNetBufferList(
-    IN  PRECEIVER       Receiver,
-    IN  PMDL            Mdl,
-    IN  ULONG           Offset,
-    IN  ULONG           Length
-    )
-{
-    ULONG               Cpu;
-    PNET_BUFFER_LIST    NetBufferList;
+    ULONG                   Cpu;
+    PNET_BUFFER_LIST        NetBufferList;
 
     Cpu = KeGetCurrentProcessorNumber();
 
@@ -158,9 +93,9 @@ ReceiverAllocateNetBufferList(
     return NetBufferList;
 }        
 
-VOID
-ReceiverReleaseNetBufferList(
-    IN  PRECEIVER           Receiver,
+static VOID
+__ReceiverReleaseNetBufferList(
+    IN  PXENNET_RECEIVER    Receiver,
     IN  PNET_BUFFER_LIST    NetBufferList,
     IN  BOOLEAN             Cache
     )
@@ -184,17 +119,16 @@ ReceiverReleaseNetBufferList(
 
 static FORCEINLINE ULONG
 __ReceiverReturnNetBufferLists(
-    IN  PRECEIVER           Receiver,
+    IN  PXENNET_RECEIVER    Receiver,
     IN  PNET_BUFFER_LIST    NetBufferList,
     IN  BOOLEAN             Cache
     )
 {
-    PADAPTER                Adapter;
+    PXENVIF_VIF_INTERFACE   VifInterface;
     LIST_ENTRY              List;
     ULONG                   Count;
 
-    Adapter = CONTAINING_RECORD(Receiver, ADAPTER, Receiver);
-
+    VifInterface = AdapterGetVifInterface(Receiver->Adapter);
     InitializeListHead(&List);
 
     Count = 0;
@@ -212,7 +146,7 @@ __ReceiverReturnNetBufferLists(
 
         Mdl = NET_BUFFER_FIRST_MDL(NetBuffer);
 
-        ReceiverReleaseNetBufferList(Receiver, NetBufferList, Cache);
+        __ReceiverReleaseNetBufferList(Receiver, NetBufferList, Cache);
 
         Packet = CONTAINING_RECORD(Mdl, XENVIF_RECEIVER_PACKET, Mdl);
 
@@ -224,51 +158,33 @@ __ReceiverReturnNetBufferLists(
 
     if (Count != 0)
         XENVIF_VIF(ReceiverReturnPackets,
-                   &Adapter->VifInterface,
+                   VifInterface,
                    &List);
 
     return Count;
 }
 
-VOID
-ReceiverReturnNetBufferLists(
-    IN  PRECEIVER           Receiver,
-    IN  PNET_BUFFER_LIST    HeadNetBufferList,
-    IN  ULONG               Flags
-    )
-{
-    ULONG                   Count;
-
-    UNREFERENCED_PARAMETER(Flags);
-
-    Count = __ReceiverReturnNetBufferLists(Receiver, HeadNetBufferList, TRUE);
-    (VOID) __InterlockedSubtract(&Receiver->InNDIS, Count);
-}
-
 static PNET_BUFFER_LIST
-ReceiverReceivePacket(
-    IN  PRECEIVER                               Receiver,
-    IN  PMDL                                    Mdl,
-    IN  ULONG                                   Offset,
-    IN  ULONG                                   Length,
-    IN  XENVIF_PACKET_CHECKSUM_FLAGS            Flags,
-    IN  USHORT                                  TagControlInformation
+__ReceiverReceivePacket(
+    IN  PXENNET_RECEIVER                Receiver,
+    IN  PMDL                            Mdl,
+    IN  ULONG                           Offset,
+    IN  ULONG                           Length,
+    IN  XENVIF_PACKET_CHECKSUM_FLAGS    Flags,
+    IN  USHORT                          TagControlInformation
     )
 {
-    PADAPTER                                    Adapter;
     PNET_BUFFER_LIST                            NetBufferList;
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO   csumInfo;
 
-    Adapter = CONTAINING_RECORD(Receiver, ADAPTER, Receiver);
-
-    NetBufferList = ReceiverAllocateNetBufferList(Receiver,
-                                                  Mdl,
-                                                  Offset,
-                                                  Length);
+    NetBufferList = __ReceiverAllocateNetBufferList(Receiver,
+                                                    Mdl,
+                                                    Offset,
+                                                    Length);
     if (NetBufferList == NULL)
         goto fail1;
 
-    NetBufferList->SourceHandle = Adapter->NdisAdapterHandle;
+    NetBufferList->SourceHandle = AdapterGetHandle(Receiver->Adapter);
 
     csumInfo.Value = 0;
 
@@ -300,25 +216,22 @@ ReceiverReceivePacket(
     return NetBufferList;
 
 fail2:
-    ReceiverReleaseNetBufferList(Receiver, NetBufferList, TRUE);
+    __ReceiverReleaseNetBufferList(Receiver, NetBufferList, TRUE);
 
 fail1:
     return NULL;
 }
 
 static VOID
-ReceiverPushPackets(
-    IN  PRECEIVER           Receiver,
+__ReceiverPushPackets(
+    IN  PXENNET_RECEIVER    Receiver,
     IN  PNET_BUFFER_LIST    NetBufferList,
     IN  ULONG               Count,
     IN  BOOLEAN             LowResources
     )
 {
-    PADAPTER                Adapter;
     ULONG                   Flags;
     LONG                    InNDIS;
-
-    Adapter = CONTAINING_RECORD(Receiver, ADAPTER, Receiver);
 
     InNDIS = Receiver->InNDIS;
 
@@ -342,7 +255,7 @@ ReceiverPushPackets(
             break;
     }
 
-    NdisMIndicateReceiveNetBufferLists(Adapter->NdisAdapterHandle,
+    NdisMIndicateReceiveNetBufferLists(AdapterGetHandle(Receiver->Adapter),
                                        NetBufferList,
                                        NDIS_DEFAULT_PORT_NUMBER,
                                        Count,
@@ -352,21 +265,121 @@ ReceiverPushPackets(
         (VOID) __ReceiverReturnNetBufferLists(Receiver, NetBufferList, FALSE);
 }
 
-#define IN_NDIS_MAX 1024
+NDIS_STATUS
+ReceiverInitialize(
+    IN  PXENNET_ADAPTER     Adapter,
+    OUT PXENNET_RECEIVER    *Receiver
+    )
+{
+    NET_BUFFER_LIST_POOL_PARAMETERS Params;
+    NDIS_STATUS                     status;
+
+    *Receiver = ExAllocatePoolWithTag(NonPagedPool,
+                                      sizeof(XENNET_RECEIVER),
+                                      RECEIVER_POOL_TAG);
+
+    status = NDIS_STATUS_RESOURCES;
+    if (*Receiver == NULL)
+        goto fail1;
+
+    RtlZeroMemory(*Receiver, sizeof(XENNET_RECEIVER));
+    (*Receiver)->Adapter = Adapter;
+
+    RtlZeroMemory(&Params, sizeof(NET_BUFFER_LIST_POOL_PARAMETERS));
+    Params.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
+    Params.Header.Revision = NET_BUFFER_LIST_POOL_PARAMETERS_REVISION_1;
+    Params.Header.Size = sizeof(Params);
+    Params.ProtocolId = 0;
+    Params.ContextSize = 0;
+    Params.fAllocateNetBuffer = TRUE;
+    Params.PoolTag = 'PteN';
+
+    (*Receiver)->NetBufferListPool = NdisAllocateNetBufferListPool(AdapterGetHandle(Adapter),
+                                                                   &Params);
+
+    status = NDIS_STATUS_RESOURCES;
+    if ((*Receiver)->NetBufferListPool == NULL)
+        goto fail2;
+
+    return NDIS_STATUS_SUCCESS;
+
+fail2:
+fail1:
+    return status;
+}
+
+VOID
+ReceiverTeardown(
+    IN  PXENNET_RECEIVER    Receiver
+    )
+{
+    ULONG               Cpu;
+    PNET_BUFFER_LIST    NetBufferList;
+
+    ASSERT(Receiver != NULL);
+
+    for (Cpu = 0; Cpu < MAXIMUM_PROCESSORS; Cpu++) {
+        NetBufferList = Receiver->GetList[Cpu];
+        while (NetBufferList != NULL) {
+            PNET_BUFFER_LIST    Next;
+
+            Next = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
+            NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
+
+            NdisFreeNetBufferList(NetBufferList);
+
+            NetBufferList = Next;
+        }
+    }
+
+    NetBufferList = Receiver->PutList;
+    while (NetBufferList != NULL) {
+        PNET_BUFFER_LIST    Next;
+
+        Next = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
+        NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
+
+        NdisFreeNetBufferList(NetBufferList);
+
+        NetBufferList = Next;
+    }
+
+    NdisFreeNetBufferListPool(Receiver->NetBufferListPool);
+    Receiver->NetBufferListPool = NULL;
+
+    Receiver->Adapter = NULL;
+
+    ExFreePoolWithTag(Receiver, RECEIVER_POOL_TAG);
+}
+
+VOID
+ReceiverReturnNetBufferLists(
+    IN  PXENNET_RECEIVER    Receiver,
+    IN  PNET_BUFFER_LIST    NetBufferList,
+    IN  ULONG               ReturnFlags
+    )
+{
+    ULONG                   Count;
+
+    UNREFERENCED_PARAMETER(ReturnFlags);
+
+    Count = __ReceiverReturnNetBufferLists(Receiver, NetBufferList, TRUE);
+    (VOID) __InterlockedSubtract(&Receiver->InNDIS, Count);
+}
 
 VOID
 ReceiverReceivePackets(
-    IN  PRECEIVER       Receiver,
-    IN  PLIST_ENTRY     List
+    IN  PXENNET_RECEIVER    Receiver,
+    IN  PLIST_ENTRY         List
     )
 {
-    PADAPTER            Adapter;
-    PNET_BUFFER_LIST    HeadNetBufferList;
-    PNET_BUFFER_LIST    *TailNetBufferList;
-    ULONG               Count;
-    BOOLEAN             LowResources;
+    PXENVIF_VIF_INTERFACE   VifInterface;
+    PNET_BUFFER_LIST        HeadNetBufferList;
+    PNET_BUFFER_LIST        *TailNetBufferList;
+    ULONG                   Count;
+    BOOLEAN                 LowResources;
 
-    Adapter = CONTAINING_RECORD(Receiver, ADAPTER, Receiver);
+    VifInterface = AdapterGetVifInterface(Receiver->Adapter);
     LowResources = FALSE;
 
 again:
@@ -404,28 +417,28 @@ again:
 
         TagControlInformation = Info->TagControlInformation;
 
-        NetBufferList = ReceiverReceivePacket(Receiver, Mdl, Offset, Length, Flags, TagControlInformation);
+        NetBufferList = __ReceiverReceivePacket(Receiver, Mdl, Offset, Length, Flags, TagControlInformation);
 
         if (NetBufferList != NULL) {
             *TailNetBufferList = NetBufferList;
             TailNetBufferList = &NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
             Count++;
         } else {
-            LIST_ENTRY  List;
+            LIST_ENTRY  PacketList;
 
-            InitializeListHead(&List);
-            InsertTailList(&List, &Packet->ListEntry);
+            InitializeListHead(&PacketList);
+            InsertTailList(&PacketList, &Packet->ListEntry);
 
             XENVIF_VIF(ReceiverReturnPackets,
-                       &Adapter->VifInterface,
-                       &List);
+                       VifInterface,
+                       &PacketList);
         }
     }
 
     if (Count != 0) {
         ASSERT(HeadNetBufferList != NULL);
 
-        ReceiverPushPackets(Receiver, HeadNetBufferList, Count, LowResources);
+        __ReceiverPushPackets(Receiver, HeadNetBufferList, Count, LowResources);
     }
 
     if (!IsListEmpty(List)) {
@@ -433,4 +446,12 @@ again:
         LowResources = TRUE;
         goto again;
     }
+}
+
+PXENVIF_VIF_OFFLOAD_OPTIONS
+ReceiverOffloadOptions(
+    IN  PXENNET_RECEIVER    Receiver
+    )
+{
+    return &Receiver->OffloadOptions;
 }

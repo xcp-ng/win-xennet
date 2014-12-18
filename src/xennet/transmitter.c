@@ -29,58 +29,76 @@
  * SUCH DAMAGE.
  */
 
-#include "common.h"
+#include <ndis.h>
+#include "transmitter.h"
+#include "adapter.h"
+#include <vif_interface.h>
+#include "dbg_print.h"
+#include "assert.h"
 
-#pragma warning(disable:4711)
+struct _XENNET_TRANSMITTER {
+    PXENNET_ADAPTER             Adapter;
+    XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
+};
+
+#define TRANSMITTER_POOL_TAG        'TteN'
 
 NDIS_STATUS
-TransmitterInitialize(
-    IN  PTRANSMITTER    Transmitter,
-    IN  PADAPTER        Adapter
+TransmitterInitialize (
+    IN  PXENNET_ADAPTER     Adapter,
+    OUT PXENNET_TRANSMITTER *Transmitter
     )
 {
-    Transmitter->Adapter = Adapter;
+    *Transmitter = ExAllocatePoolWithTag(NonPagedPool,
+                                         sizeof(XENNET_TRANSMITTER),
+                                         TRANSMITTER_POOL_TAG);
+    if (*Transmitter == NULL)
+        goto fail1;
+
+    RtlZeroMemory(*Transmitter, sizeof(XENNET_TRANSMITTER));
+    (*Transmitter)->Adapter = Adapter;
 
     return NDIS_STATUS_SUCCESS;
+
+fail1:
+    return NDIS_STATUS_FAILURE;
+}
+
+VOID
+TransmitterTeardown(
+    IN  PXENNET_TRANSMITTER Transmitter
+    )
+{
+    Transmitter->Adapter = NULL;
+    Transmitter->OffloadOptions.Value = 0;
+
+    ExFreePoolWithTag(Transmitter, TRANSMITTER_POOL_TAG);
 }
 
 VOID
 TransmitterEnable(
-    IN  PTRANSMITTER    Transmitter
+    IN  PXENNET_TRANSMITTER Transmitter
     )
 {
-    PADAPTER            Adapter = Transmitter->Adapter;
+    PXENVIF_VIF_INTERFACE   VifInterface = AdapterGetVifInterface(Transmitter->Adapter);
 
     (VOID) XENVIF_VIF(TransmitterSetPacketOffset,
-                      &Adapter->VifInterface,
+                      VifInterface,
                       XENVIF_TRANSMITTER_PACKET_OFFSET_OFFSET,
                       (LONG_PTR)&NET_BUFFER_CURRENT_MDL_OFFSET((PNET_BUFFER)NULL) -
                       (LONG_PTR)&NET_BUFFER_MINIPORT_RESERVED((PNET_BUFFER)NULL));
 
     (VOID) XENVIF_VIF(TransmitterSetPacketOffset,
-                      &Adapter->VifInterface,
+                      VifInterface,
                       XENVIF_TRANSMITTER_PACKET_LENGTH_OFFSET,
                       (LONG_PTR)&NET_BUFFER_DATA_LENGTH((PNET_BUFFER)NULL) -
                       (LONG_PTR)&NET_BUFFER_MINIPORT_RESERVED((PNET_BUFFER)NULL));
 
     (VOID) XENVIF_VIF(TransmitterSetPacketOffset,
-                      &Adapter->VifInterface,
+                      VifInterface,
                       XENVIF_TRANSMITTER_PACKET_MDL_OFFSET,
                       (LONG_PTR)&NET_BUFFER_CURRENT_MDL((PNET_BUFFER)NULL) -
                       (LONG_PTR)&NET_BUFFER_MINIPORT_RESERVED((PNET_BUFFER)NULL));
-}
-
-VOID 
-TransmitterDelete (
-    IN OUT PTRANSMITTER *Transmitter
-    )
-{
-    ASSERT(Transmitter != NULL);
-
-    if (*Transmitter) {
-        ExFreePool(*Transmitter);
-        *Transmitter = NULL;
-    }
 }
 
 typedef struct _NET_BUFFER_LIST_RESERVED {
@@ -97,24 +115,37 @@ typedef struct _NET_BUFFER_RESERVED {
 C_ASSERT(sizeof (NET_BUFFER_RESERVED) <= RTL_FIELD_SIZE(NET_BUFFER, MiniportReserved));
 
 static VOID
-TransmitterAbortNetBufferList(
-    IN  PTRANSMITTER        Transmitter,
-    IN  PNET_BUFFER_LIST    NetBufferList
+__TransmitterCompleteNetBufferList(
+    IN  PXENNET_TRANSMITTER     Transmitter,
+    IN  PNET_BUFFER_LIST        NetBufferList,
+    IN  NDIS_STATUS             Status
     )
 {
     ASSERT3P(NET_BUFFER_LIST_NEXT_NBL(NetBufferList), ==, NULL);
 
-    NET_BUFFER_LIST_STATUS(NetBufferList) = NDIS_STATUS_NOT_ACCEPTED;
+    NET_BUFFER_LIST_STATUS(NetBufferList) = Status;
 
-    NdisMSendNetBufferListsComplete(Transmitter->Adapter->NdisAdapterHandle,
+    if (Status == NDIS_STATUS_SUCCESS) {
+        PNDIS_TCP_LARGE_SEND_OFFLOAD_NET_BUFFER_LIST_INFO   LargeSendInfo;
+
+        LargeSendInfo = (PNDIS_TCP_LARGE_SEND_OFFLOAD_NET_BUFFER_LIST_INFO)
+                                &NET_BUFFER_LIST_INFO(NetBufferList,
+                                                      TcpLargeSendNetBufferListInfo);
+        if (LargeSendInfo->LsoV2Transmit.MSS != 0)
+            LargeSendInfo->LsoV2TransmitComplete.Reserved = 0;
+    }
+
+    NdisMSendNetBufferListsComplete(AdapterGetHandle(Transmitter->Adapter),
                                     NetBufferList,
                                     NDIS_SEND_COMPLETE_FLAGS_DISPATCH_LEVEL);
 }
 
-VOID
-TransmitterAbortPackets(
-    IN  PTRANSMITTER                Transmitter,
-    IN  PXENVIF_TRANSMITTER_PACKET  Packet
+
+static VOID
+__TransmitterCompletePackets(
+    IN  PXENNET_TRANSMITTER         Transmitter,
+    IN  PXENVIF_TRANSMITTER_PACKET  Packet,
+    IN  NDIS_STATUS                 Status
     )
 {
     while (Packet != NULL) {
@@ -135,21 +166,86 @@ TransmitterAbortPackets(
 
         ASSERT(ListReserved->Reference != 0);
         if (InterlockedDecrement(&ListReserved->Reference) == 0)
-            TransmitterAbortNetBufferList(Transmitter, NetBufferList);
+            __TransmitterCompleteNetBufferList(Transmitter, NetBufferList, Status);
 
         Packet = Next;
     }
 }
 
+static VOID
+__TransmitterOffloadOptions(
+    IN  PNET_BUFFER_LIST            NetBufferList,
+    OUT PXENVIF_VIF_OFFLOAD_OPTIONS OffloadOptions,
+    OUT PUSHORT                     TagControlInformation,
+    OUT PUSHORT                     MaximumSegmentSize
+    )
+{
+    PNDIS_TCP_LARGE_SEND_OFFLOAD_NET_BUFFER_LIST_INFO   LargeSendInfo;
+    PNDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO          ChecksumInfo;
+    PNDIS_NET_BUFFER_LIST_8021Q_INFO                    Ieee8021QInfo;
+
+    LargeSendInfo = (PNDIS_TCP_LARGE_SEND_OFFLOAD_NET_BUFFER_LIST_INFO)&NET_BUFFER_LIST_INFO(NetBufferList,
+                                                                                                TcpLargeSendNetBufferListInfo);
+    ChecksumInfo = (PNDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO)&NET_BUFFER_LIST_INFO(NetBufferList,
+                                                                                        TcpIpChecksumNetBufferListInfo);
+    Ieee8021QInfo = (PNDIS_NET_BUFFER_LIST_8021Q_INFO)&NET_BUFFER_LIST_INFO(NetBufferList,
+                                                                            Ieee8021QNetBufferListInfo);
+
+    OffloadOptions->Value = 0;
+    *TagControlInformation = 0;
+    *MaximumSegmentSize = 0;
+
+    if (ChecksumInfo->Transmit.IsIPv4) {
+        if (ChecksumInfo->Transmit.IpHeaderChecksum)
+            OffloadOptions->OffloadIpVersion4HeaderChecksum = 1;
+
+        if (ChecksumInfo->Transmit.TcpChecksum)
+            OffloadOptions->OffloadIpVersion4TcpChecksum = 1;
+
+        if (ChecksumInfo->Transmit.UdpChecksum)
+            OffloadOptions->OffloadIpVersion4UdpChecksum = 1;
+    }
+
+    if (ChecksumInfo->Transmit.IsIPv6) {
+        if (ChecksumInfo->Transmit.TcpChecksum)
+            OffloadOptions->OffloadIpVersion6TcpChecksum = 1;
+
+        if (ChecksumInfo->Transmit.UdpChecksum)
+            OffloadOptions->OffloadIpVersion6UdpChecksum = 1;
+    }
+
+    if (Ieee8021QInfo->TagHeader.UserPriority != 0) {
+        OffloadOptions->OffloadTagManipulation = 1;
+
+        ASSERT3U(Ieee8021QInfo->TagHeader.CanonicalFormatId, ==, 0);
+        ASSERT3U(Ieee8021QInfo->TagHeader.VlanId, ==, 0);
+
+        PACK_TAG_CONTROL_INFORMATION(*TagControlInformation,
+                                        Ieee8021QInfo->TagHeader.UserPriority,
+                                        Ieee8021QInfo->TagHeader.CanonicalFormatId,
+                                        Ieee8021QInfo->TagHeader.VlanId);
+    }
+
+    if (LargeSendInfo->LsoV2Transmit.MSS != 0) {
+        if (LargeSendInfo->LsoV2Transmit.IPVersion == NDIS_TCP_LARGE_SEND_OFFLOAD_IPv4)
+            OffloadOptions->OffloadIpVersion4LargePacket = 1;
+
+        if (LargeSendInfo->LsoV2Transmit.IPVersion == NDIS_TCP_LARGE_SEND_OFFLOAD_IPv6)
+            OffloadOptions->OffloadIpVersion6LargePacket = 1;
+
+        ASSERT3U(LargeSendInfo->LsoV2Transmit.MSS >> 16, ==, 0);
+        *MaximumSegmentSize = (USHORT)LargeSendInfo->LsoV2Transmit.MSS;
+    }
+}
+
 VOID
 TransmitterSendNetBufferLists(
-    IN  PTRANSMITTER            Transmitter,
+    IN  PXENNET_TRANSMITTER     Transmitter,
     IN  PNET_BUFFER_LIST        NetBufferList,
     IN  NDIS_PORT_NUMBER        PortNumber,
     IN  ULONG                   SendFlags
     )
 {
-    PADAPTER                    Adapter = Transmitter->Adapter;
     PXENVIF_TRANSMITTER_PACKET  HeadPacket;
     PXENVIF_TRANSMITTER_PACKET  *TailPacket;
     KIRQL                       Irql;
@@ -167,25 +263,23 @@ TransmitterSendNetBufferLists(
     }
 
     while (NetBufferList != NULL) {
-        PNET_BUFFER_LIST                                    ListNext;
-        PNET_BUFFER_LIST_RESERVED                           ListReserved;
-        PNDIS_TCP_LARGE_SEND_OFFLOAD_NET_BUFFER_LIST_INFO   LargeSendInfo;
-        PNDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO          ChecksumInfo;
-        PNDIS_NET_BUFFER_LIST_8021Q_INFO                    Ieee8021QInfo;
-        PNET_BUFFER                                         NetBuffer;
+        PNET_BUFFER_LIST            ListNext;
+        PNET_BUFFER_LIST_RESERVED   ListReserved;
+        PNET_BUFFER                 NetBuffer;
+        XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
+        USHORT                      TagControlInformation;
+        USHORT                      MaximumSegmentSize;
 
         ListNext = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
         NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
 
+        __TransmitterOffloadOptions(NetBufferList,
+                                    &OffloadOptions,
+                                    &TagControlInformation,
+                                    &MaximumSegmentSize);
+
         ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
         RtlZeroMemory(ListReserved, sizeof (NET_BUFFER_LIST_RESERVED));
-
-        LargeSendInfo = (PNDIS_TCP_LARGE_SEND_OFFLOAD_NET_BUFFER_LIST_INFO)&NET_BUFFER_LIST_INFO(NetBufferList,
-                                                                                                 TcpLargeSendNetBufferListInfo);
-        ChecksumInfo = (PNDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO)&NET_BUFFER_LIST_INFO(NetBufferList,
-                                                                                         TcpIpChecksumNetBufferListInfo);
-        Ieee8021QInfo = (PNDIS_NET_BUFFER_LIST_8021Q_INFO)&NET_BUFFER_LIST_INFO(NetBufferList, 
-                                                                                Ieee8021QNetBufferListInfo);
 
         NetBuffer = NET_BUFFER_LIST_FIRST_NB(NetBufferList);
         while (NetBuffer != NULL) {
@@ -199,50 +293,9 @@ TransmitterSendNetBufferLists(
             ListReserved->Reference++;
 
             Packet = &Reserved->Packet;
-
-            if (ChecksumInfo->Transmit.IsIPv4) {
-                if (ChecksumInfo->Transmit.IpHeaderChecksum)
-                    Packet->Send.OffloadOptions.OffloadIpVersion4HeaderChecksum = 1;
-
-                if (ChecksumInfo->Transmit.TcpChecksum)
-                    Packet->Send.OffloadOptions.OffloadIpVersion4TcpChecksum = 1;
-
-                if (ChecksumInfo->Transmit.UdpChecksum)
-                    Packet->Send.OffloadOptions.OffloadIpVersion4UdpChecksum = 1;
-            }
-
-            if (ChecksumInfo->Transmit.IsIPv6) {
-                if (ChecksumInfo->Transmit.TcpChecksum)
-                    Packet->Send.OffloadOptions.OffloadIpVersion6TcpChecksum = 1;
-
-                if (ChecksumInfo->Transmit.UdpChecksum)
-                    Packet->Send.OffloadOptions.OffloadIpVersion6UdpChecksum = 1;
-            }
-
-            if (Ieee8021QInfo->TagHeader.UserPriority != 0) {
-                Packet->Send.OffloadOptions.OffloadTagManipulation = 1;
-
-                ASSERT3U(Ieee8021QInfo->TagHeader.CanonicalFormatId, ==, 0);
-                ASSERT3U(Ieee8021QInfo->TagHeader.VlanId, ==, 0);
-
-                PACK_TAG_CONTROL_INFORMATION(Packet->Send.TagControlInformation,
-                                             Ieee8021QInfo->TagHeader.UserPriority,
-                                             Ieee8021QInfo->TagHeader.CanonicalFormatId,
-                                             Ieee8021QInfo->TagHeader.VlanId);
-            }
-
-            if (LargeSendInfo->LsoV2Transmit.MSS != 0) {
-                if (LargeSendInfo->LsoV2Transmit.IPVersion == NDIS_TCP_LARGE_SEND_OFFLOAD_IPv4)
-                    Packet->Send.OffloadOptions.OffloadIpVersion4LargePacket = 1;
-
-                if (LargeSendInfo->LsoV2Transmit.IPVersion == NDIS_TCP_LARGE_SEND_OFFLOAD_IPv6)
-                    Packet->Send.OffloadOptions.OffloadIpVersion6LargePacket = 1;
-
-                ASSERT3U(LargeSendInfo->LsoV2Transmit.MSS >> 16, ==, 0);
-                Packet->Send.MaximumSegmentSize = (USHORT)LargeSendInfo->LsoV2Transmit.MSS;
-            }
-
-            Packet->Send.OffloadOptions.Value &= Transmitter->OffloadOptions.Value;
+            Packet->Send.OffloadOptions.Value = OffloadOptions.Value & Transmitter->OffloadOptions.Value;
+            Packet->Send.MaximumSegmentSize = MaximumSegmentSize;
+            Packet->Send.TagControlInformation = TagControlInformation;
 
             ASSERT3P(Packet->Next, ==, NULL);
             *TailPacket = Packet;
@@ -258,65 +311,28 @@ TransmitterSendNetBufferLists(
         NTSTATUS    status; 
 
         status = XENVIF_VIF(TransmitterQueuePackets,
-                            &Adapter->VifInterface,
+                            AdapterGetVifInterface(Transmitter->Adapter),
                             HeadPacket);
         if (!NT_SUCCESS(status))
-            TransmitterAbortPackets(Transmitter, HeadPacket);
+            __TransmitterCompletePackets(Transmitter, HeadPacket, NDIS_STATUS_NOT_ACCEPTED);
     }
 
     NDIS_LOWER_IRQL(Irql, DISPATCH_LEVEL);
 }
 
-static VOID
-TransmitterCompleteNetBufferList(
-    IN  PTRANSMITTER                                    Transmitter,
-    IN  PNET_BUFFER_LIST                                NetBufferList
-    )
-{
-    PADAPTER                                            Adapter = Transmitter->Adapter;
-    PNDIS_TCP_LARGE_SEND_OFFLOAD_NET_BUFFER_LIST_INFO   LargeSendInfo;
-
-    ASSERT3P(NET_BUFFER_LIST_NEXT_NBL(NetBufferList), ==, NULL);
-
-    LargeSendInfo = (PNDIS_TCP_LARGE_SEND_OFFLOAD_NET_BUFFER_LIST_INFO)&NET_BUFFER_LIST_INFO(NetBufferList,
-                                                                                             TcpLargeSendNetBufferListInfo);
-
-    if (LargeSendInfo->LsoV2Transmit.MSS != 0)
-        LargeSendInfo->LsoV2TransmitComplete.Reserved = 0;
-
-    NET_BUFFER_LIST_STATUS(NetBufferList) = NDIS_STATUS_SUCCESS;
-
-    NdisMSendNetBufferListsComplete(Adapter->NdisAdapterHandle,
-                                    NetBufferList,
-                                    NDIS_SEND_COMPLETE_FLAGS_DISPATCH_LEVEL);
-}
-
 VOID
 TransmitterCompletePackets(
-    IN  PTRANSMITTER                Transmitter,
+    IN  PXENNET_TRANSMITTER         Transmitter,
     IN  PXENVIF_TRANSMITTER_PACKET  Packet
     )
 {
-    while (Packet != NULL) {
-        PXENVIF_TRANSMITTER_PACKET  Next;
-        PNET_BUFFER_RESERVED        Reserved;
-        PNET_BUFFER_LIST            NetBufferList;
-        PNET_BUFFER_LIST_RESERVED   ListReserved;
+    __TransmitterCompletePackets(Transmitter, Packet, NDIS_STATUS_SUCCESS);
+}
 
-        Next = Packet->Next;
-        Packet->Next = NULL;
-
-        Reserved = CONTAINING_RECORD(Packet, NET_BUFFER_RESERVED, Packet);
-
-        NetBufferList = Reserved->NetBufferList;
-        ASSERT(NetBufferList != NULL);
-
-        ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
-
-        ASSERT(ListReserved->Reference != 0);
-        if (InterlockedDecrement(&ListReserved->Reference) == 0)
-            TransmitterCompleteNetBufferList(Transmitter, NetBufferList);
-
-        Packet = Next;
-    }
+PXENVIF_VIF_OFFLOAD_OPTIONS
+TransmitterOffloadOptions(
+    IN  PXENNET_TRANSMITTER Transmitter
+    )
+{
+    return &Transmitter->OffloadOptions;
 }

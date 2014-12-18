@@ -29,7 +29,10 @@
  * SUCH DAMAGE.
  */
 
-#pragma once
+#ifndef _XENNET_ADAPTER_H_
+#define _XENNET_ADAPTER_H_
+
+#include <ndis.h>
 
 #define XENNET_INTERFACE_TYPE           NdisInterfaceInternal
 
@@ -40,6 +43,14 @@
                                          NDIS_MAC_OPTION_NO_LOOPBACK |          \
                                          NDIS_MAC_OPTION_8021P_PRIORITY |       \
                                          NDIS_MAC_OPTION_SUPPORTS_MAC_ADDRESS_OVERWRITE)
+
+#define XENNET_MEDIA_MAX_SPEED          1000000000ull
+
+#define XENNET_SUPPORTED_PACKET_FILTERS (NDIS_PACKET_TYPE_DIRECTED |        \
+                                         NDIS_PACKET_TYPE_MULTICAST |       \
+                                         NDIS_PACKET_TYPE_ALL_MULTICAST |   \
+                                         NDIS_PACKET_TYPE_BROADCAST |       \
+                                         NDIS_PACKET_TYPE_PROMISCUOUS)
 
 typedef struct _PROPERTIES {
     int ipv4_csum;
@@ -54,120 +65,67 @@ typedef struct _PROPERTIES {
     int lrov6;
 } PROPERTIES, *PPROPERTIES;
 
-struct _ADAPTER {
-    LIST_ENTRY              ListEntry;
-    XENVIF_VIF_INTERFACE    VifInterface;
-    BOOLEAN                 AcquiredInterfaces;
-    ULONG                   MaximumFrameSize;
-    ULONG                   CurrentLookahead;
-    NDIS_HANDLE             NdisAdapterHandle;
-    NDIS_HANDLE             NdisDmaHandle;
-    NDIS_PNP_CAPABILITIES   Capabilities;
-    PROPERTIES              Properties;
-    RECEIVER                Receiver;
-    PTRANSMITTER            Transmitter;
-    BOOLEAN                 Enabled;
-    NDIS_OFFLOAD            Offload;
-};
+typedef struct _XENNET_ADAPTER XENNET_ADAPTER, *PXENNET_ADAPTER;
 
-MINIPORT_CANCEL_OID_REQUEST AdapterCancelOidRequest;
-VOID
-AdapterCancelOidRequest (
-    IN  NDIS_HANDLE NdisHandle,
-    IN  PVOID       RequestId
-    );
-
-MINIPORT_CANCEL_SEND AdapterCancelSendNetBufferLists;
-VOID 
-AdapterCancelSendNetBufferLists (
-    IN  NDIS_HANDLE NdisHandle,
-    IN  PVOID       CancelId
-    );
-
-MINIPORT_CHECK_FOR_HANG AdapterCheckForHang;
-BOOLEAN 
-AdapterCheckForHang (
-    IN  NDIS_HANDLE NdisHandle
-    );
-
-VOID
-AdapterCleanup (
-    IN PADAPTER Adapter
-    );
-
-NDIS_STATUS 
-AdapterInitialize (
-    IN  PADAPTER    Adapter,
-    IN  NDIS_HANDLE AdapterHandle
-    );
-
-MINIPORT_OID_REQUEST AdapterOidRequest;
-NDIS_STATUS 
-AdapterOidRequest (
-    IN  NDIS_HANDLE         NdisHandle,
-    IN  PNDIS_OID_REQUEST   NdisRequest
-    );
-
-MINIPORT_PAUSE AdapterPause;
-NDIS_STATUS 
-AdapterPause (
-    IN  NDIS_HANDLE                     NdisHandle,
-    IN  PNDIS_MINIPORT_PAUSE_PARAMETERS MiniportPauseParameters
-    );
-
-MINIPORT_DEVICE_PNP_EVENT_NOTIFY AdapterPnPEventHandler;
-VOID 
-AdapterPnPEventHandler (
-    IN  NDIS_HANDLE             NdisHandle,
-    IN  PNET_DEVICE_PNP_EVENT   NetDevicePnPEvent
-    );
-
-MINIPORT_RESET AdapterReset;
-NDIS_STATUS 
-AdapterReset (
-    IN  NDIS_HANDLE     MiniportAdapterContext,
-    OUT PBOOLEAN        AddressingReset
-    );
-
-MINIPORT_RESTART AdapterRestart;
-NDIS_STATUS 
-AdapterRestart (
-    IN  NDIS_HANDLE                         MiniportAdapterContext,
-    IN  PNDIS_MINIPORT_RESTART_PARAMETERS   MiniportRestartParameters
-    );
-
-MINIPORT_RETURN_NET_BUFFER_LISTS AdapterReturnNetBufferLists;
-VOID 
-AdapterReturnNetBufferLists (
-    IN  NDIS_HANDLE         MiniportAdapterContext,
-    IN  PNET_BUFFER_LIST    NetBufferLists,
-    IN  ULONG               ReturnFlags
-    );
-
-MINIPORT_SEND_NET_BUFFER_LISTS AdapterSendNetBufferLists;
-VOID 
-AdapterSendNetBufferLists (
-    IN  NDIS_HANDLE         MiniportAdapterContext,
-    IN  PNET_BUFFER_LIST    NetBufferList,
-    IN  NDIS_PORT_NUMBER    PortNumber,
-    IN  ULONG               SendFlags
-    );
-
-NDIS_STATUS
-AdapterStop (
-    IN  PADAPTER    Adapter
-    );
-
-MINIPORT_SHUTDOWN AdapterShutdown;
-
-VOID 
-AdapterShutdown (
-    IN  NDIS_HANDLE             MiniportAdapterContext,
-    IN  NDIS_SHUTDOWN_ACTION    ShutdownAction
+extern NDIS_STATUS
+AdapterInitialize(
+    IN  NDIS_HANDLE         Handle,
+    OUT PXENNET_ADAPTER     *Adapter
     );
 
 extern VOID
-ReceiverReceivePackets(
-    IN  PRECEIVER   Receiver,
-    IN  PLIST_ENTRY List
+AdapterTeardown(
+    IN  PXENNET_ADAPTER     Adapter
     );
+
+extern NDIS_HANDLE
+AdapterGetHandle(
+    IN  PXENNET_ADAPTER     Adapter
+    );
+
+#include <vif_interface.h>
+extern PXENVIF_VIF_INTERFACE
+AdapterGetVifInterface(
+    IN  PXENNET_ADAPTER     Adapter
+    );
+
+#include "transmitter.h"
+extern PXENNET_TRANSMITTER
+AdapterGetTransmitter(
+    IN  PXENNET_ADAPTER     Adapter
+    );
+
+#include "receiver.h"
+extern PXENNET_RECEIVER
+AdapterGetReceiver(
+    IN  PXENNET_ADAPTER     Adapter
+    );
+
+extern NDIS_STATUS
+AdapterEnable(
+    IN  PXENNET_ADAPTER     Adapter
+    );
+
+extern BOOLEAN
+AdapterDisable(
+    IN  PXENNET_ADAPTER     Adapter
+    );
+
+extern VOID
+AdapterMediaStateChange(
+    IN  PXENNET_ADAPTER     Adapter
+    );
+
+extern NDIS_STATUS
+AdapterSetInformation(
+    IN  PXENNET_ADAPTER     Adapter,
+    IN  PNDIS_OID_REQUEST   Request
+    );
+
+extern NDIS_STATUS
+AdapterQueryInformation(
+    IN  PXENNET_ADAPTER     Adapter,
+    IN  PNDIS_OID_REQUEST   Request
+    );
+
+#endif // _XENNET_ADAPTER_H_
