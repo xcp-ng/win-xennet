@@ -45,6 +45,7 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <vif_interface.h>
+#include <cache_interface.h>
 
 #include <tcpip.h>
 #include <version.h>
@@ -2164,7 +2165,7 @@ RegisterInterface(
                           InterfaceName,
                           0,
                           REG_DWORD,
-                          (const BYTE *)InterfaceVersion,
+                          (const BYTE *)&InterfaceVersion,
                           sizeof(DWORD));
     if (Error != ERROR_SUCCESS) {
         SetLastError(Error);
@@ -2337,6 +2338,7 @@ __DifInstallPostProcess(
         goto fail5;
 
     RegisterInterface("XENVIF", "VIF", XENVIF_VIF_INTERFACE_VERSION_MAX);
+    RegisterInterface("XENBUS", "CACHE", XENBUS_CACHE_INTERFACE_VERSION_MAX);
 
     if (SoftwareKeyName != NULL) {
         (VOID) RequestReboot(DeviceInfoSet, DeviceInfoData);
@@ -2419,6 +2421,7 @@ __DifRemovePreProcess(
     Log("====>");
 
     (VOID) DeregisterAllInterfaces("XENVIF");
+    (VOID) DeregisterAllInterfaces("XENBUS");
     (VOID) RemoveUnplugService("NICS", "XENNET");
     (VOID) RequestReboot(DeviceInfoSet, DeviceInfoData);
 

@@ -257,13 +257,37 @@ struct _XENVIF_TRANSMITTER_PACKET_V1 {
     };
 };
 
-typedef struct _XENVIF_TRANSMITTER_PACKET_V1 XENVIF_TRANSMITTER_PACKET, *PXENVIF_TRANSMITTER_PACKET;
+typedef struct _XENVIF_TRANSMITTER_PACKET_V1 XENVIF_TRANSMITTER_PACKET_V1, *PXENVIF_TRANSMITTER_PACKET_V1;
 
 #pragma warning(pop)
 
 #pragma pack(pop) 
 
 C_ASSERT(sizeof (struct _XENVIF_TRANSMITTER_PACKET_V1) <= (3 * sizeof (PVOID)));
+
+/*! \struct _XENVIF_TRANSMITTER_PACKET_V2
+    \brief Transmit-side packet structure (v2)
+*/
+struct _XENVIF_TRANSMITTER_PACKET_V2 {
+    /*! List entry used for chaining packets together */
+    LIST_ENTRY                                  ListEntry;
+    /*! Opaque cookie used to store context information for packet return */
+    PVOID                                       Cookie;
+    /*! Hash value set by subscriber */
+    ULONG                                       Value;
+    /*! Packet information passed from subscriber to provider */
+    XENVIF_TRANSMITTER_PACKET_SEND_INFO         Send;
+    /*! Packet information passed from provider to subscriber on packet return */
+    XENVIF_TRANSMITTER_PACKET_COMPLETION_INFO   Completion;
+    /*! Packet data MDL */
+    PMDL                                        Mdl;
+    /*! Offset into MDL to start of packet */
+    ULONG                                       Offset;
+    /*! Packet length */
+    ULONG                                       Length;
+};
+
+typedef struct _XENVIF_TRANSMITTER_PACKET_V2 XENVIF_TRANSMITTER_PACKET, *PXENVIF_TRANSMITTER_PACKET;
 
 /*! \enum _XENVIF_TRANSMITTER_PACKET_OFFSET
     \brief Offsets of packet metadata relative to
@@ -474,16 +498,44 @@ typedef NTSTATUS
     IN  LONG_PTR                            Value
     );
 
+/*! \typedef XENVIF_VIF_TRANSMITTER_GET_PACKET_HEADERS
+    \brief Get the packet headers into supplied buffer
+
+    \param Interface The interface header
+    \param Packet The packet to acquire headers for.
+    \param Headers The buffer to receive headers.
+    \param Info The offsets into Headers for relevant headers
+*/
+typedef NTSTATUS
+(*XENVIF_VIF_TRANSMITTER_GET_PACKET_HEADERS)(
+    IN  PINTERFACE                  Interface,
+    IN  PXENVIF_TRANSMITTER_PACKET  Packet,
+    OUT PVOID                       Headers,
+    OUT PXENVIF_PACKET_INFO         Info
+    );
+
 /*! \typedef XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS
     \brief Queue transmit side packets at the provider
 
     \param Interface The interface header
-    \param Head The head of a chain of XENVIF_TRANSMITTER_PACKET
+    \param Head The head of a chain of _XENVIF_TRANSMITTER_PACKET_V1
 */
 typedef NTSTATUS
 (*XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS)(
-    IN  PINTERFACE                  Interface,
-    IN  PXENVIF_TRANSMITTER_PACKET  Head
+    IN  PINTERFACE                      Interface,
+    IN  PXENVIF_TRANSMITTER_PACKET_V1   Head
+    );
+
+/*! \typedef XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS_V2
+    \brief Queue transmit side packets at the provider
+
+    \param Interface The interface header
+    \param List List of _XENVIF_TRANSMITTER_PACKET_V2
+*/
+typedef NTSTATUS
+(*XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS_V2)(
+    IN  PINTERFACE  Interface,
+    IN  PLIST_ENTRY List
     );
 
 /*! \typedef XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS
@@ -708,7 +760,37 @@ struct _XENVIF_VIF_INTERFACE_V1 {
     XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
 };
 
-typedef struct _XENVIF_VIF_INTERFACE_V1 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTERFACE;
+
+/*! \struct _XENVIF_VIF_INTERFACE_V2
+    \brief VIF interface version 2
+    \ingroup interfaces
+*/
+struct _XENVIF_VIF_INTERFACE_V2 {
+    INTERFACE                                       Interface;
+    XENVIF_VIF_ACQUIRE                              Acquire;
+    XENVIF_VIF_RELEASE                              Release;
+    XENVIF_VIF_ENABLE                               Enable;
+    XENVIF_VIF_DISABLE                              Disable;
+    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
+    XENVIF_VIF_RECEIVER_RETURN_PACKETS              ReceiverReturnPackets;
+    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
+    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
+    XENVIF_VIF_TRANSMITTER_GET_PACKET_HEADERS       TransmitterGetPacketHeaders;
+    XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS_V2         TransmitterQueuePackets;
+    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
+    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
+    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
+    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
+    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
+    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
+    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
+    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
+    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
+    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
+    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
+};
+
+typedef struct _XENVIF_VIF_INTERFACE_V2 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTERFACE;
 
 /*! \def XENVIF_VIF
     \brief Macro at assist in method invocation
@@ -719,6 +801,6 @@ typedef struct _XENVIF_VIF_INTERFACE_V1 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTER
 #endif  // _WINDLL
 
 #define XENVIF_VIF_INTERFACE_VERSION_MIN    1
-#define XENVIF_VIF_INTERFACE_VERSION_MAX    1
+#define XENVIF_VIF_INTERFACE_VERSION_MAX    2
 
 #endif  // _XENVIF_INTERFACE_H

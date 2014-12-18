@@ -49,11 +49,6 @@ TransmitterTeardown(
     );
 
 extern VOID
-TransmitterEnable(
-    IN  PXENNET_TRANSMITTER Transmitter
-    );
-
-extern VOID
 TransmitterSendNetBufferLists (
     IN  PXENNET_TRANSMITTER Transmitter,
     IN  PNET_BUFFER_LIST    NetBufferList,
@@ -63,8 +58,8 @@ TransmitterSendNetBufferLists (
 
 extern VOID
 TransmitterCompletePackets(
-    IN  PXENNET_TRANSMITTER         Transmitter,
-    IN  PXENVIF_TRANSMITTER_PACKET  Packet
+    IN  PXENNET_TRANSMITTER Transmitter,
+    IN  PLIST_ENTRY         List
     );
 
 extern PXENVIF_VIF_OFFLOAD_OPTIONS

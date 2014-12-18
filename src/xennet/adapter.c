@@ -164,11 +164,11 @@ AdapterVifCallback(
 
     switch (Type) {
     case XENVIF_TRANSMITTER_RETURN_PACKETS: {
-        PXENVIF_TRANSMITTER_PACKET HeadPacket;
+        PLIST_ENTRY List;
 
-        HeadPacket = va_arg(Arguments, PXENVIF_TRANSMITTER_PACKET);
+        List = va_arg(Arguments, PLIST_ENTRY);
 
-        TransmitterCompletePackets(Adapter->Transmitter, HeadPacket);
+        TransmitterCompletePackets(Adapter->Transmitter, List);
         break;
     }
     case XENVIF_RECEIVER_QUEUE_PACKETS: {
@@ -964,7 +964,6 @@ AdapterEnable(
     if (!NT_SUCCESS(status))
         goto fail1;
 
-    TransmitterEnable(Adapter->Transmitter);
     Adapter->Enabled = TRUE;
 
     return NDIS_STATUS_SUCCESS;

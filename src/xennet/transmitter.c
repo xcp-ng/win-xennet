@@ -33,15 +33,61 @@
 #include "transmitter.h"
 #include "adapter.h"
 #include <vif_interface.h>
+#include <cache_interface.h>
 #include "dbg_print.h"
 #include "assert.h"
 
 struct _XENNET_TRANSMITTER {
     PXENNET_ADAPTER             Adapter;
     XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
+    KSPIN_LOCK                  Lock;
+    PXENBUS_CACHE               PacketCache;
 };
 
+#define XENNET_PACKET_CACHE_MIN     32
 #define TRANSMITTER_POOL_TAG        'TteN'
+
+static NTSTATUS
+__TransmitterPacketCtor(
+    IN  PVOID       Argument,
+    IN  PVOID       Object
+    )
+{
+    UNREFERENCED_PARAMETER(Argument);
+    UNREFERENCED_PARAMETER(Object);
+    return STATUS_SUCCESS;
+}
+
+static VOID
+__TransmitterPacketDtor(
+    IN  PVOID       Argument,
+    IN  PVOID       Object
+    )
+{
+    UNREFERENCED_PARAMETER(Argument);
+    UNREFERENCED_PARAMETER(Object);
+}
+
+static VOID
+__TransmitterPacketAcquireLock(
+    IN  PVOID           Argument
+    )
+{
+    PXENNET_TRANSMITTER Transmitter = Argument;
+
+    KeAcquireSpinLockAtDpcLevel(&Transmitter->Lock);
+}
+
+static VOID
+__TransmitterPacketReleaseLock(
+    IN  PVOID           Argument
+    )
+{
+    PXENNET_TRANSMITTER Transmitter = Argument;
+
+#pragma prefast(suppress:26110)
+    KeReleaseSpinLockFromDpcLevel(&Transmitter->Lock);
+}
 
 NDIS_STATUS
 TransmitterInitialize (
@@ -49,18 +95,53 @@ TransmitterInitialize (
     OUT PXENNET_TRANSMITTER *Transmitter
     )
 {
+    NTSTATUS                status;
+    PXENBUS_CACHE_INTERFACE CacheInterface;
+
+    CacheInterface = AdapterGetCacheInterface(Adapter);
+
     *Transmitter = ExAllocatePoolWithTag(NonPagedPool,
                                          sizeof(XENNET_TRANSMITTER),
                                          TRANSMITTER_POOL_TAG);
+
+    status = STATUS_NO_MEMORY;
     if (*Transmitter == NULL)
         goto fail1;
 
     RtlZeroMemory(*Transmitter, sizeof(XENNET_TRANSMITTER));
+
     (*Transmitter)->Adapter = Adapter;
+
+    KeInitializeSpinLock(&(*Transmitter)->Lock);
+
+    status = XENBUS_CACHE(Create,
+                          CacheInterface,
+                          "packet_cache",
+                          sizeof(XENVIF_TRANSMITTER_PACKET),
+                          XENNET_PACKET_CACHE_MIN,
+                          __TransmitterPacketCtor,
+                          __TransmitterPacketDtor,
+                          __TransmitterPacketAcquireLock,
+                          __TransmitterPacketReleaseLock,
+                          *Transmitter,
+                          &(*Transmitter)->PacketCache);
+    if (!NT_SUCCESS(status))
+        goto fail2;
 
     return NDIS_STATUS_SUCCESS;
 
+fail2:
+    Error("fail2\n");
+
+    RtlZeroMemory(&(*Transmitter)->Lock, sizeof(KSPIN_LOCK));
+
+    ExFreePoolWithTag(*Transmitter, TRANSMITTER_POOL_TAG);
+
+    *Transmitter = NULL;
+
 fail1:
+    Error("fail1\n (%08x)", status);
+
     return NDIS_STATUS_FAILURE;
 }
 
@@ -69,36 +150,54 @@ TransmitterTeardown(
     IN  PXENNET_TRANSMITTER Transmitter
     )
 {
+    PXENBUS_CACHE_INTERFACE CacheInterface;
+
+    CacheInterface = AdapterGetCacheInterface(Transmitter->Adapter);
+
     Transmitter->Adapter = NULL;
     Transmitter->OffloadOptions.Value = 0;
+    RtlZeroMemory(&Transmitter->Lock, sizeof(KSPIN_LOCK));
+
+    XENBUS_CACHE(Destroy,
+                 CacheInterface,
+                 Transmitter->PacketCache);
+    Transmitter->PacketCache = NULL;
 
     ExFreePoolWithTag(Transmitter, TRANSMITTER_POOL_TAG);
 }
 
-VOID
-TransmitterEnable(
+static FORCEINLINE PXENVIF_TRANSMITTER_PACKET
+__TransmitterGetPacket(
     IN  PXENNET_TRANSMITTER Transmitter
     )
 {
-    PXENVIF_VIF_INTERFACE   VifInterface = AdapterGetVifInterface(Transmitter->Adapter);
+    PXENBUS_CACHE_INTERFACE CacheInterface;
 
-    (VOID) XENVIF_VIF(TransmitterSetPacketOffset,
-                      VifInterface,
-                      XENVIF_TRANSMITTER_PACKET_OFFSET_OFFSET,
-                      (LONG_PTR)&NET_BUFFER_CURRENT_MDL_OFFSET((PNET_BUFFER)NULL) -
-                      (LONG_PTR)&NET_BUFFER_MINIPORT_RESERVED((PNET_BUFFER)NULL));
+    CacheInterface = AdapterGetCacheInterface(Transmitter->Adapter);
 
-    (VOID) XENVIF_VIF(TransmitterSetPacketOffset,
-                      VifInterface,
-                      XENVIF_TRANSMITTER_PACKET_LENGTH_OFFSET,
-                      (LONG_PTR)&NET_BUFFER_DATA_LENGTH((PNET_BUFFER)NULL) -
-                      (LONG_PTR)&NET_BUFFER_MINIPORT_RESERVED((PNET_BUFFER)NULL));
+    return XENBUS_CACHE(Get,
+                        CacheInterface,
+                        Transmitter->PacketCache,
+                        FALSE);
+}
 
-    (VOID) XENVIF_VIF(TransmitterSetPacketOffset,
-                      VifInterface,
-                      XENVIF_TRANSMITTER_PACKET_MDL_OFFSET,
-                      (LONG_PTR)&NET_BUFFER_CURRENT_MDL((PNET_BUFFER)NULL) -
-                      (LONG_PTR)&NET_BUFFER_MINIPORT_RESERVED((PNET_BUFFER)NULL));
+static FORCEINLINE VOID
+__TransmitterPutPacket(
+    IN  PXENNET_TRANSMITTER         Transmitter,
+    IN  PXENVIF_TRANSMITTER_PACKET  Packet
+    )
+{
+    PXENBUS_CACHE_INTERFACE CacheInterface;
+
+    CacheInterface = AdapterGetCacheInterface(Transmitter->Adapter);
+
+    RtlZeroMemory(Packet, sizeof(XENVIF_TRANSMITTER_PACKET));
+
+    XENBUS_CACHE(Put,
+                 CacheInterface,
+                 Transmitter->PacketCache,
+                 Packet,
+                 FALSE);
 }
 
 typedef struct _NET_BUFFER_LIST_RESERVED {
@@ -106,13 +205,6 @@ typedef struct _NET_BUFFER_LIST_RESERVED {
 } NET_BUFFER_LIST_RESERVED, *PNET_BUFFER_LIST_RESERVED;
 
 C_ASSERT(sizeof (NET_BUFFER_LIST_RESERVED) <= RTL_FIELD_SIZE(NET_BUFFER_LIST, MiniportReserved));
-
-typedef struct _NET_BUFFER_RESERVED {
-    XENVIF_TRANSMITTER_PACKET   Packet;
-    PNET_BUFFER_LIST            NetBufferList;
-} NET_BUFFER_RESERVED, *PNET_BUFFER_RESERVED;
-
-C_ASSERT(sizeof (NET_BUFFER_RESERVED) <= RTL_FIELD_SIZE(NET_BUFFER, MiniportReserved));
 
 static VOID
 __TransmitterCompleteNetBufferList(
@@ -140,26 +232,25 @@ __TransmitterCompleteNetBufferList(
                                     NDIS_SEND_COMPLETE_FLAGS_DISPATCH_LEVEL);
 }
 
-
 static VOID
 __TransmitterCompletePackets(
-    IN  PXENNET_TRANSMITTER         Transmitter,
-    IN  PXENVIF_TRANSMITTER_PACKET  Packet,
-    IN  NDIS_STATUS                 Status
+    IN  PXENNET_TRANSMITTER Transmitter,
+    IN  PLIST_ENTRY         List,
+    IN  NDIS_STATUS         Status
     )
 {
-    while (Packet != NULL) {
-        PXENVIF_TRANSMITTER_PACKET  Next;
-        PNET_BUFFER_RESERVED        Reserved;
+    while (!IsListEmpty(List)) {
+        PLIST_ENTRY                 ListEntry;
+        PXENVIF_TRANSMITTER_PACKET  Packet;
         PNET_BUFFER_LIST            NetBufferList;
         PNET_BUFFER_LIST_RESERVED   ListReserved;
 
-        Next = Packet->Next;
-        Packet->Next = NULL;
+        ListEntry = RemoveHeadList(List);
+        ASSERT3P(ListEntry, !=, List);
 
-        Reserved = CONTAINING_RECORD(Packet, NET_BUFFER_RESERVED, Packet);
+        Packet = CONTAINING_RECORD(ListEntry, XENVIF_TRANSMITTER_PACKET, ListEntry);
 
-        NetBufferList = Reserved->NetBufferList;
+        NetBufferList = Packet->Cookie;
         ASSERT(NetBufferList != NULL);
 
         ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
@@ -168,7 +259,7 @@ __TransmitterCompletePackets(
         if (InterlockedDecrement(&ListReserved->Reference) == 0)
             __TransmitterCompleteNetBufferList(Transmitter, NetBufferList, Status);
 
-        Packet = Next;
+        __TransmitterPutPacket(Transmitter, Packet);
     }
 }
 
@@ -246,14 +337,12 @@ TransmitterSendNetBufferLists(
     IN  ULONG                   SendFlags
     )
 {
-    PXENVIF_TRANSMITTER_PACKET  HeadPacket;
-    PXENVIF_TRANSMITTER_PACKET  *TailPacket;
+    LIST_ENTRY                  List;
     KIRQL                       Irql;
 
     UNREFERENCED_PARAMETER(PortNumber);
 
-    HeadPacket = NULL;
-    TailPacket = &HeadPacket;
+    InitializeListHead(&List);
 
     if (!NDIS_TEST_SEND_AT_DISPATCH_LEVEL(SendFlags)) {
         ASSERT3U(NDIS_CURRENT_IRQL(), <=, DISPATCH_LEVEL);
@@ -283,23 +372,35 @@ TransmitterSendNetBufferLists(
 
         NetBuffer = NET_BUFFER_LIST_FIRST_NB(NetBufferList);
         while (NetBuffer != NULL) {
-            PNET_BUFFER_RESERVED        Reserved;
             PXENVIF_TRANSMITTER_PACKET  Packet;
 
-            Reserved = (PNET_BUFFER_RESERVED)NET_BUFFER_MINIPORT_RESERVED(NetBuffer);
-            RtlZeroMemory(Reserved, sizeof (NET_BUFFER_RESERVED));
+            Packet = __TransmitterGetPacket(Transmitter);
+            if (Packet == NULL) {
+                while (ListReserved->Reference--) {
+                    PLIST_ENTRY     ListEntry;
 
-            Reserved->NetBufferList = NetBufferList;
+                    ListEntry = RemoveTailList(&List);
+                    ASSERT3P(ListEntry, !=, &List);
+
+                    Packet = CONTAINING_RECORD(ListEntry, XENVIF_TRANSMITTER_PACKET, ListEntry);
+
+                    __TransmitterPutPacket(Transmitter, Packet);
+                }
+                __TransmitterCompleteNetBufferList(Transmitter, NetBufferList, NDIS_STATUS_NOT_ACCEPTED);
+                break;
+            }
+
             ListReserved->Reference++;
 
-            Packet = &Reserved->Packet;
+            Packet->Cookie = NetBufferList;
             Packet->Send.OffloadOptions.Value = OffloadOptions.Value & Transmitter->OffloadOptions.Value;
             Packet->Send.MaximumSegmentSize = MaximumSegmentSize;
             Packet->Send.TagControlInformation = TagControlInformation;
+            Packet->Mdl = NET_BUFFER_CURRENT_MDL(NetBuffer);
+            Packet->Length = NET_BUFFER_DATA_LENGTH(NetBuffer);
+            Packet->Offset = NET_BUFFER_CURRENT_MDL_OFFSET(NetBuffer);
 
-            ASSERT3P(Packet->Next, ==, NULL);
-            *TailPacket = Packet;
-            TailPacket = &Packet->Next;
+            InsertTailList(&List, &Packet->ListEntry);
 
             NetBuffer = NET_BUFFER_NEXT_NB(NetBuffer);
         }
@@ -307,14 +408,14 @@ TransmitterSendNetBufferLists(
         NetBufferList = ListNext;
     }
 
-    if (HeadPacket != NULL) {
+    if (!IsListEmpty(&List)) {
         NTSTATUS    status; 
 
         status = XENVIF_VIF(TransmitterQueuePackets,
                             AdapterGetVifInterface(Transmitter->Adapter),
-                            HeadPacket);
+                            &List);
         if (!NT_SUCCESS(status))
-            __TransmitterCompletePackets(Transmitter, HeadPacket, NDIS_STATUS_NOT_ACCEPTED);
+            __TransmitterCompletePackets(Transmitter, &List, NDIS_STATUS_NOT_ACCEPTED);
     }
 
     NDIS_LOWER_IRQL(Irql, DISPATCH_LEVEL);
@@ -322,11 +423,11 @@ TransmitterSendNetBufferLists(
 
 VOID
 TransmitterCompletePackets(
-    IN  PXENNET_TRANSMITTER         Transmitter,
-    IN  PXENVIF_TRANSMITTER_PACKET  Packet
+    IN  PXENNET_TRANSMITTER Transmitter,
+    IN  PLIST_ENTRY         List
     )
 {
-    __TransmitterCompletePackets(Transmitter, Packet, NDIS_STATUS_SUCCESS);
+    __TransmitterCompletePackets(Transmitter, List, NDIS_STATUS_SUCCESS);
 }
 
 PXENVIF_VIF_OFFLOAD_OPTIONS
