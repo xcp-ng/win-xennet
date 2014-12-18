@@ -34,12 +34,14 @@
 #include "transmitter.h"
 #include "receiver.h"
 #include <vif_interface.h>
+#include <cache_interface.h>
 #include <version.h>
 #include "dbg_print.h"
 #include "assert.h"
 
 struct _XENNET_ADAPTER {
     XENVIF_VIF_INTERFACE    VifInterface;
+    XENBUS_CACHE_INTERFACE  CacheInterface;
 
     ULONG                   MaximumFrameSize;
     ULONG                   CurrentLookahead;
@@ -919,6 +921,14 @@ AdapterGetVifInterface(
     )
 {
     return &Adapter->VifInterface;
+}
+
+PXENBUS_CACHE_INTERFACE
+AdapterGetCacheInterface(
+    IN  PXENNET_ADAPTER     Adapter
+    )
+{
+    return &Adapter->CacheInterface;
 }
 
 PXENNET_TRANSMITTER
@@ -2011,36 +2021,50 @@ AdapterInitialize(
     if (!NT_SUCCESS(status))
         goto fail2;
 
+    status = __QueryInterface(DeviceObject,
+                              &GUID_XENBUS_CACHE_INTERFACE,
+                              XENBUS_CACHE_INTERFACE_VERSION_MAX,
+                              (PINTERFACE)&(*Adapter)->CacheInterface,
+                              sizeof(XENBUS_CACHE_INTERFACE),
+                              FALSE);
+    if (!NT_SUCCESS(status))
+        goto fail3;
+
     status = XENVIF_VIF(Acquire,
                         &(*Adapter)->VifInterface);
     if (!NT_SUCCESS(status))
-        goto fail3;
+        goto fail4;
+
+    status = XENBUS_CACHE(Acquire,
+                          &(*Adapter)->CacheInterface);
+    if (!NT_SUCCESS(status))
+        goto fail5;
 
     (*Adapter)->NdisAdapterHandle = Handle;
 
     ndisStatus = TransmitterInitialize(*Adapter, &(*Adapter)->Transmitter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail4;
+        goto fail6;
 
     ndisStatus = ReceiverInitialize(*Adapter, &(*Adapter)->Receiver);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail5;
+        goto fail7;
 
     ndisStatus = AdapterGetAdvancedSettings(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail6;
+        goto fail8;
 
     ndisStatus = AdapterSetRegistrationAttributes(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail7;
+        goto fail9;
 
     ndisStatus = AdapterSetGeneralAttributes(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail8;
+        goto fail10;
 
     ndisStatus = AdapterSetOffloadAttributes(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail9;
+        goto fail11;
 
     RtlZeroMemory(&Dma, sizeof(NDIS_SG_DMA_DESCRIPTION));
     Dma.Header.Type = NDIS_OBJECT_TYPE_SG_DMA_DESCRIPTION;
@@ -2059,27 +2083,31 @@ AdapterInitialize(
 
     ndisStatus = AdapterEnable(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail10;
+        goto fail12;
 
     return NDIS_STATUS_SUCCESS;
 
-fail10:
+fail12:
     if ((*Adapter)->NdisDmaHandle)
         NdisMDeregisterScatterGatherDma((*Adapter)->NdisDmaHandle);
     (*Adapter)->NdisDmaHandle = NULL;
+fail11:
+fail10:
 fail9:
 fail8:
-fail7:
-fail6:
     ReceiverTeardown((*Adapter)->Receiver);
     (*Adapter)->Receiver = NULL;
-fail5:
+fail7:
     TransmitterTeardown((*Adapter)->Transmitter);
     (*Adapter)->Transmitter = NULL;
-fail4:
+fail6:
     (*Adapter)->NdisAdapterHandle = NULL;
 
+    XENBUS_CACHE(Release, &(*Adapter)->CacheInterface);
+fail5:
     XENVIF_VIF(Release, &(*Adapter)->VifInterface);
+fail4:
+    RtlZeroMemory(&(*Adapter)->CacheInterface, sizeof(XENBUS_CACHE_INTERFACE));
 fail3:
     RtlZeroMemory(&(*Adapter)->VifInterface, sizeof(XENVIF_VIF_INTERFACE));
 fail2:
@@ -2102,6 +2130,9 @@ AdapterTeardown(
     if (Adapter->NdisDmaHandle != NULL)
         NdisMDeregisterScatterGatherDma(Adapter->NdisDmaHandle);
     Adapter->NdisDmaHandle = NULL;
+
+    XENBUS_CACHE(Release, &Adapter->CacheInterface);
+    RtlZeroMemory(&Adapter->CacheInterface, sizeof(XENBUS_CACHE_INTERFACE));
 
     XENVIF_VIF(Release, &Adapter->VifInterface);
     RtlZeroMemory(&Adapter->VifInterface, sizeof(XENVIF_VIF_INTERFACE));

@@ -89,6 +89,12 @@ AdapterGetVifInterface(
     IN  PXENNET_ADAPTER     Adapter
     );
 
+#include <cache_interface.h>
+extern PXENBUS_CACHE_INTERFACE
+AdapterGetCacheInterface(
+    IN  PXENNET_ADAPTER     Adapter
+    );
+
 #include "transmitter.h"
 extern PXENNET_TRANSMITTER
 AdapterGetTransmitter(
