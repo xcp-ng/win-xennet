@@ -34,6 +34,7 @@
 #include "adapter.h"
 #include <vif_interface.h>
 #include <cache_interface.h>
+#include <tcpip.h>
 #include "dbg_print.h"
 #include "assert.h"
 
@@ -42,10 +43,13 @@ struct _XENNET_TRANSMITTER {
     XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
     KSPIN_LOCK                  Lock;
     PXENBUS_CACHE               PacketCache;
+    PXENBUS_CACHE               BufferCache;
 };
 
 #define XENNET_PACKET_CACHE_MIN     32
 #define TRANSMITTER_POOL_TAG        'TteN'
+#define BUFFER_CACHE_ITEM_SIZE      512
+#define MAX_HEADERS_LENGTH          (sizeof(IP_ADDRESS) + sizeof(IP_ADDRESS) + sizeof(USHORT) + sizeof(USHORT))
 
 static NTSTATUS
 __TransmitterPacketCtor(
@@ -80,6 +84,48 @@ __TransmitterPacketAcquireLock(
 
 static VOID
 __TransmitterPacketReleaseLock(
+    IN  PVOID           Argument
+    )
+{
+    PXENNET_TRANSMITTER Transmitter = Argument;
+
+#pragma prefast(suppress:26110)
+    KeReleaseSpinLockFromDpcLevel(&Transmitter->Lock);
+}
+
+static NTSTATUS
+__TransmitterBufferCtor(
+    IN  PVOID       Argument,
+    IN  PVOID       Object
+    )
+{
+    UNREFERENCED_PARAMETER(Argument);
+    UNREFERENCED_PARAMETER(Object);
+    return STATUS_SUCCESS;
+}
+
+static VOID
+__TransmitterBufferDtor(
+    IN  PVOID       Argument,
+    IN  PVOID       Object
+    )
+{
+    UNREFERENCED_PARAMETER(Argument);
+    UNREFERENCED_PARAMETER(Object);
+}
+
+static VOID
+__TransmitterBufferAcquireLock(
+    IN  PVOID           Argument
+    )
+{
+    PXENNET_TRANSMITTER Transmitter = Argument;
+
+    KeAcquireSpinLockAtDpcLevel(&Transmitter->Lock);
+}
+
+static VOID
+__TransmitterBufferReleaseLock(
     IN  PVOID           Argument
     )
 {
@@ -128,7 +174,27 @@ TransmitterInitialize (
     if (!NT_SUCCESS(status))
         goto fail2;
 
+    status = XENBUS_CACHE(Create,
+                          CacheInterface,
+                          "buffer_cache",
+                          BUFFER_CACHE_ITEM_SIZE,
+                          0,
+                          __TransmitterBufferCtor,
+                          __TransmitterBufferDtor,
+                          __TransmitterBufferAcquireLock,
+                          __TransmitterBufferReleaseLock,
+                          *Transmitter,
+                          &(*Transmitter)->BufferCache);
+    if (!NT_SUCCESS(status))
+        goto fail3;
+
     return NDIS_STATUS_SUCCESS;
+
+fail3:
+    XENBUS_CACHE(Destroy,
+                 CacheInterface,
+                 (*Transmitter)->PacketCache);
+    (*Transmitter)->PacketCache = NULL;
 
 fail2:
     Error("fail2\n");
@@ -156,12 +222,18 @@ TransmitterTeardown(
 
     Transmitter->Adapter = NULL;
     Transmitter->OffloadOptions.Value = 0;
-    RtlZeroMemory(&Transmitter->Lock, sizeof(KSPIN_LOCK));
+
+    XENBUS_CACHE(Destroy,
+                 CacheInterface,
+                 Transmitter->BufferCache);
+    Transmitter->BufferCache = NULL;
 
     XENBUS_CACHE(Destroy,
                  CacheInterface,
                  Transmitter->PacketCache);
     Transmitter->PacketCache = NULL;
+
+    RtlZeroMemory(&Transmitter->Lock, sizeof(KSPIN_LOCK));
 
     ExFreePoolWithTag(Transmitter, TRANSMITTER_POOL_TAG);
 }
@@ -197,6 +269,40 @@ __TransmitterPutPacket(
                  CacheInterface,
                  Transmitter->PacketCache,
                  Packet,
+                 FALSE);
+}
+
+static FORCEINLINE PVOID
+__TransmitterGetBuffer(
+    IN  PXENNET_TRANSMITTER Transmitter
+    )
+{
+    PXENBUS_CACHE_INTERFACE CacheInterface;
+
+    CacheInterface = AdapterGetCacheInterface(Transmitter->Adapter);
+
+    return XENBUS_CACHE(Get,
+                        CacheInterface,
+                        Transmitter->BufferCache,
+                        FALSE);
+}
+
+static FORCEINLINE VOID
+__TransmitterPutBuffer(
+    IN  PXENNET_TRANSMITTER Transmitter,
+    IN  PVOID               Buffer
+    )
+{
+    PXENBUS_CACHE_INTERFACE CacheInterface;
+
+    CacheInterface = AdapterGetCacheInterface(Transmitter->Adapter);
+
+    RtlZeroMemory(Buffer, BUFFER_CACHE_ITEM_SIZE);
+
+    XENBUS_CACHE(Put,
+                 CacheInterface,
+                 Transmitter->BufferCache,
+                 Buffer,
                  FALSE);
 }
 
@@ -329,6 +435,127 @@ __TransmitterOffloadOptions(
     }
 }
 
+static ULONG
+__Hash(
+    IN  PVOID                       Buffer,
+    IN  ULONG                       Length
+    )
+{
+    PUCHAR                          Array = (PUCHAR)Buffer;
+    ULONG                           Accumulator;
+    ULONG                           Index;
+
+    Accumulator = 0;
+
+    for (Index = 0; Index < Length; ++Index) {
+        ULONG   Overflow;
+
+        Accumulator = (Accumulator << 4) + Array[Index];
+
+        Overflow = Accumulator & 0x00000f00;
+        if (Overflow != 0) {
+            Accumulator ^= Overflow >> 8;
+            Accumulator ^= Overflow;
+        }
+    }
+
+    return Accumulator;
+}
+
+static ULONG
+__TransmitterCalculateHash(
+    IN  PVOID                       Buffer,
+    IN  PXENVIF_PACKET_INFO         Info
+    )
+{
+    UCHAR       Headers[MAX_HEADERS_LENGTH];
+    PUCHAR      Ptr;
+
+    Ptr = (PUCHAR)Headers;
+
+    if (Info->IpHeader.Length) {
+        PIP_HEADER  Ip = (PIP_HEADER)((PUCHAR)Buffer + Info->IpHeader.Offset);
+
+        switch (Ip->Version) {
+        case 4:
+            RtlCopyMemory(Ptr, &Ip->Version4.SourceAddress, sizeof(IPV4_ADDRESS));
+            Ptr += sizeof(IPV4_ADDRESS);
+            RtlCopyMemory(Ptr, &Ip->Version4.DestinationAddress, sizeof(IPV4_ADDRESS));
+            Ptr += sizeof(IPV4_ADDRESS);
+            break;
+        case 6:
+            RtlCopyMemory(Ptr, &Ip->Version6.SourceAddress, sizeof(IPV6_ADDRESS));
+            Ptr += sizeof(IPV6_ADDRESS);
+            RtlCopyMemory(Ptr, &Ip->Version6.DestinationAddress, sizeof(IPV6_ADDRESS));
+            Ptr += sizeof(IPV6_ADDRESS);
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (Info->TcpHeader.Length) {
+        PTCP_HEADER Tcp = (PTCP_HEADER)((PUCHAR)Buffer + Info->TcpHeader.Offset);
+
+        RtlCopyMemory(Ptr, &Tcp->SourcePort, sizeof(USHORT));
+        Ptr += sizeof(USHORT);
+        RtlCopyMemory(Ptr, &Tcp->DestinationPort, sizeof(USHORT));
+        Ptr += sizeof(USHORT);
+    } else if (Info->UdpHeader.Length) {
+        PUDP_HEADER Udp = (PUDP_HEADER)((PUCHAR)Buffer + Info->UdpHeader.Offset);
+
+        RtlCopyMemory(Ptr, &Udp->SourcePort, sizeof(USHORT));
+        Ptr += sizeof(USHORT);
+        RtlCopyMemory(Ptr, &Udp->DestinationPort, sizeof(USHORT));
+        Ptr += sizeof(USHORT);
+    }
+
+    if (Ptr == (PUCHAR)Headers)
+        return 0;
+
+    return __Hash(Headers, (ULONG)((ULONG_PTR)Ptr - (ULONG_PTR)Headers));
+}
+
+static ULONG
+__TransmitterGetHash(
+    IN  PXENNET_TRANSMITTER         Transmitter,
+    IN  PXENVIF_TRANSMITTER_PACKET  Packet
+    )
+{
+    PXENVIF_VIF_INTERFACE           VifInterface;
+    ULONG                           Hash;
+    XENVIF_PACKET_INFO              Info;
+    PVOID                           Buffer;
+    NTSTATUS                        status;
+
+    Hash = 0;
+    VifInterface = AdapterGetVifInterface(Transmitter->Adapter);
+
+    Buffer = __TransmitterGetBuffer(Transmitter);
+    if (Buffer == NULL)
+        goto fail1;
+
+    RtlZeroMemory(&Info, sizeof(XENVIF_PACKET_INFO));
+
+    status = XENVIF_VIF(TransmitterGetPacketHeaders,
+                        VifInterface,
+                        Packet,
+                        Buffer,
+                        &Info);
+    if (!NT_SUCCESS(status))
+        goto fail2;
+
+    Hash = __TransmitterCalculateHash(Buffer, &Info);
+
+    __TransmitterPutBuffer(Transmitter, Buffer);
+    return Hash;
+
+fail2:
+    __TransmitterPutBuffer(Transmitter, Buffer);
+fail1:
+    return 0;
+}
+
 VOID
 TransmitterSendNetBufferLists(
     IN  PXENNET_TRANSMITTER     Transmitter,
@@ -399,6 +626,7 @@ TransmitterSendNetBufferLists(
             Packet->Mdl = NET_BUFFER_CURRENT_MDL(NetBuffer);
             Packet->Length = NET_BUFFER_DATA_LENGTH(NetBuffer);
             Packet->Offset = NET_BUFFER_CURRENT_MDL_OFFSET(NetBuffer);
+            Packet->Value = __TransmitterGetHash(Transmitter, Packet);
 
             InsertTailList(&List, &Packet->ListEntry);
 
