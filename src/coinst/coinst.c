@@ -44,6 +44,7 @@
 #include <malloc.h>
 #include <stdarg.h>
 #include <assert.h>
+#include <vif_interface.h>
 
 #include <tcpip.h>
 #include <version.h>
@@ -2082,6 +2083,156 @@ fail1:
     return FALSE;
 }
 
+static HKEY
+OpenInterfacesKey(
+    IN  PTCHAR  ProviderName
+    )
+{
+    HRESULT     Result;
+    TCHAR       KeyName[MAX_PATH];
+    HKEY        Key;
+    HRESULT     Error;
+
+    Result = StringCbPrintf(KeyName,
+                            MAX_PATH,
+                            "%s\\%s\\Interfaces",
+                            SERVICES_KEY,
+                            ProviderName);
+    if (!SUCCEEDED(Result)) {
+        SetLastError(ERROR_BUFFER_OVERFLOW);
+        goto fail1;
+    }
+
+    Error = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+                         KeyName,
+                         0,
+                         KEY_ALL_ACCESS,
+                         &Key);
+    if (Error != ERROR_SUCCESS) {
+        SetLastError(Error);
+        goto fail2;
+    }
+
+    return Key;
+
+fail2:
+    Log("fail2");
+
+fail1:
+    Error = GetLastError();
+
+    {
+        PTCHAR  Message;
+        Message = __GetErrorMessage(Error);
+        Log("fail1 (%s)", Message);
+        LocalFree(Message);
+    }
+
+    return NULL;
+}
+
+static BOOLEAN
+RegisterInterface(
+    IN  PTCHAR  ProviderName,
+    IN  PTCHAR  InterfaceName,
+    IN  DWORD   InterfaceVersion
+    )
+{
+    HKEY        Key;
+    HKEY        InterfacesKey;
+    HRESULT     Error;
+
+    InterfacesKey = OpenInterfacesKey(ProviderName);
+    if (InterfacesKey == NULL)
+        goto fail1;
+
+    Error = RegCreateKeyEx(InterfacesKey,
+                           "XENNET",
+                           0,
+                           NULL,
+                           REG_OPTION_NON_VOLATILE,
+                           KEY_ALL_ACCESS,
+                           NULL,
+                           &Key,
+                           NULL);
+    if (Error != ERROR_SUCCESS) {
+        SetLastError(Error);
+        goto fail2;
+    }
+
+    Error = RegSetValueEx(Key,
+                          InterfaceName,
+                          0,
+                          REG_DWORD,
+                          (const BYTE *)InterfaceVersion,
+                          sizeof(DWORD));
+    if (Error != ERROR_SUCCESS) {
+        SetLastError(Error);
+        goto fail3;
+    }
+
+    RegCloseKey(Key);
+    RegCloseKey(InterfacesKey);
+    return TRUE;
+
+fail3:
+    RegCloseKey(Key);
+
+fail2:
+    RegCloseKey(InterfacesKey);
+
+fail1:
+    Error = GetLastError();
+
+    {
+        PTCHAR  Message;
+        Message = __GetErrorMessage(Error);
+        Log("fail1 (%s)", Message);
+        LocalFree(Message);
+    }
+
+    return FALSE;
+}
+
+static BOOLEAN
+DeregisterAllInterfaces(
+    IN  PTCHAR  ProviderName
+    )
+{
+    HKEY        InterfacesKey;
+    HRESULT     Error;
+
+    InterfacesKey = OpenInterfacesKey(ProviderName);
+    if (InterfacesKey == NULL) {
+        goto fail1;
+    }
+
+    Error = RegDeleteTree(InterfacesKey,
+                          "XENNET");
+    if (Error != ERROR_SUCCESS) {
+        SetLastError(Error);
+        goto fail2;
+    }
+
+    RegCloseKey(InterfacesKey);
+    return TRUE;
+
+fail2:
+    RegCloseKey(InterfacesKey);
+
+fail1:
+    Error = GetLastError();
+
+    {
+        PTCHAR  Message;
+        Message = __GetErrorMessage(Error);
+        Log("fail1 (%s)", Message);
+        LocalFree(Message);
+    }
+
+    return FALSE;
+}
+
 static BOOLEAN
 RequestReboot(
     IN  HDEVINFO            DeviceInfoSet,
@@ -2185,6 +2336,8 @@ __DifInstallPostProcess(
     if (!Success)
         goto fail5;
 
+    RegisterInterface("XENVIF", "VIF", XENVIF_VIF_INTERFACE_VERSION_MAX);
+
     if (SoftwareKeyName != NULL) {
         (VOID) RequestReboot(DeviceInfoSet, DeviceInfoData);
 
@@ -2265,6 +2418,7 @@ __DifRemovePreProcess(
 
     Log("====>");
 
+    (VOID) DeregisterAllInterfaces("XENVIF");
     (VOID) RemoveUnplugService("NICS", "XENNET");
     (VOID) RequestReboot(DeviceInfoSet, DeviceInfoData);
 

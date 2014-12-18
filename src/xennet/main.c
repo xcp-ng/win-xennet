@@ -32,7 +32,6 @@
 #include <version.h>
 
 #include "common.h"
-#include "registry.h"
 
 #pragma NDIS_INIT_FUNCTION(DriverEntry)
 
@@ -197,7 +196,6 @@ DriverEntry (
     PNDIS_CONFIGURATION_PARAMETER ParameterValue;
     ULONG FailCreateClose;
     ULONG FailDeviceControl;
-    NTSTATUS status;
 
     ExInitializeDriverRuntime(DrvRtPoolNxOptIn);
 
@@ -214,15 +212,6 @@ DriverEntry (
          DAY,
          MONTH,
          YEAR);
-
-    status = RegistryInitialize(RegistryPath);
-
-    ndisStatus = (NT_SUCCESS(status)) ?
-                 NDIS_STATUS_SUCCESS :
-                 NDIS_STATUS_FAILURE;
-
-    if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail;
 
     //
     // Register miniport with NDIS.
@@ -344,8 +333,6 @@ DriverUnload (
 
     if (MiniportDriverHandle)
         NdisMDeregisterMiniportDriver(MiniportDriverHandle);
-
-    RegistryTeardown();
 
     Info("XENNET %d.%d.%d (%d) (%02d.%02d.%04d)\n",
          MAJOR_VERSION,

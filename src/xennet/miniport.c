@@ -32,19 +32,14 @@
 #define INITGUID 1
 
 #include "common.h"
-#include "registry.h"
 
 #pragma warning( disable : 4098 )
 
 extern NTSTATUS AllocAdapter(PADAPTER *Adapter);
 
-#define SERVICES_KEY        L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Services"
-
 static FORCEINLINE NTSTATUS
 __QueryInterface(
     IN  PDEVICE_OBJECT  DeviceObject,
-    IN  const WCHAR     *ProviderName,
-    IN  const CHAR      *InterfaceName,
     IN  const GUID      *Guid,
     IN  ULONG           Version,
     OUT PINTERFACE      Interface,
@@ -52,9 +47,6 @@ __QueryInterface(
     IN  BOOLEAN         Optional
     )
 {
-    UNICODE_STRING      Unicode;
-    HANDLE              InterfacesKey;
-    HANDLE              SubscriberKey;
     KEVENT              Event;
     IO_STATUS_BLOCK     StatusBlock;
     PIRP                Irp;
@@ -63,40 +55,6 @@ __QueryInterface(
 
     ASSERT3U(KeGetCurrentIrql(), ==, PASSIVE_LEVEL);
 
-    Unicode.MaximumLength = (USHORT)((wcslen(SERVICES_KEY) +
-                                      1 +
-                                      wcslen(ProviderName) +
-                                      1 +
-                                      wcslen(L"Interfaces") +
-                                      1) * sizeof (WCHAR));
-
-    Unicode.Buffer = ExAllocatePoolWithTag(NonPagedPool,
-                                           Unicode.MaximumLength,
-                                           'TEN');
-
-    status = STATUS_NO_MEMORY;
-    if (Unicode.Buffer == NULL)
-        goto fail1;
-
-    status = RtlStringCbPrintfW(Unicode.Buffer,
-                                Unicode.MaximumLength,
-                                SERVICES_KEY L"\\%ws\\Interfaces",
-                                ProviderName);
-    ASSERT(NT_SUCCESS(status));
-
-    Unicode.Length = (USHORT)(wcslen(Unicode.Buffer) * sizeof (WCHAR));
-
-    status = RegistryOpenKey(NULL, &Unicode, KEY_READ, &InterfacesKey);
-    if (!NT_SUCCESS(status))
-        goto fail2;
-
-    status = RegistryCreateSubKey(InterfacesKey, 
-                                  "XENNET", 
-                                  REG_OPTION_NON_VOLATILE, 
-                                  &SubscriberKey);
-    if (!NT_SUCCESS(status))
-        goto fail3;
-                   
     KeInitializeEvent(&Event, NotificationEvent, FALSE);
     RtlZeroMemory(&StatusBlock, sizeof(IO_STATUS_BLOCK));
 
@@ -110,7 +68,7 @@ __QueryInterface(
 
     status = STATUS_UNSUCCESSFUL;
     if (Irp == NULL)
-        goto fail4;
+        goto fail1;
 
     StackLocation = IoGetNextIrpStackLocation(Irp);
     StackLocation->MinorFunction = IRP_MN_QUERY_INTERFACE;
@@ -136,44 +94,14 @@ __QueryInterface(
         if (status == STATUS_NOT_SUPPORTED && Optional)
             goto done;
 
-        goto fail5;
+        goto fail2;
     }
 
-    status = RegistryUpdateDwordValue(SubscriberKey,
-                                      (PCHAR)InterfaceName,
-                                      Version);
-    if (!NT_SUCCESS(status))
-        goto fail6;
-
 done:
-    RegistryCloseKey(SubscriberKey);
-
-    RegistryCloseKey(InterfacesKey);
-
-    ExFreePool(Unicode.Buffer);
-
     return STATUS_SUCCESS;
-
-fail6:
-    Error("fail6\n");
-
-fail5:
-    Error("fail5\n");
-
-fail4:
-    Error("fail4\n");
-
-    RegistryCloseKey(SubscriberKey);
-
-fail3:
-    Error("fail3\n");
-
-    RegistryCloseKey(InterfacesKey);
 
 fail2:
     Error("fail2\n");
-
-    ExFreePool(Unicode.Buffer);
 
 fail1:
     Error("fail1 (%08x)\n", status);
@@ -190,8 +118,6 @@ fail1:
     _Size,                                                                              \
     _Optional)                                                                          \
     __QueryInterface((_DeviceObject),                                                   \
-                     L ## #_ProviderName,                                               \
-                     #_InterfaceName,                                                   \
                      &GUID_ ## _ProviderName ## _ ## _InterfaceName ## _INTERFACE,      \
                      (_Version),                                                        \
                      (_Interface),                                                      \
