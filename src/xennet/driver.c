@@ -486,6 +486,7 @@ DriverEntry (
                           ConfigurationHandle,
                           &ParameterName,
                           NdisParameterInteger);
+#pragma prefast(suppress:6102)
     if (ndisStatus == NDIS_STATUS_SUCCESS &&
         ParameterValue->ParameterType == NdisParameterInteger)
         FailCreateClose = ParameterValue->ParameterData.IntegerData;
@@ -499,6 +500,7 @@ DriverEntry (
                           ConfigurationHandle,
                           &ParameterName,
                           NdisParameterInteger);
+#pragma prefast(suppress:6102)
     if (ndisStatus == NDIS_STATUS_SUCCESS &&
         ParameterValue->ParameterType == NdisParameterInteger)
         FailDeviceControl = ParameterValue->ParameterData.IntegerData;

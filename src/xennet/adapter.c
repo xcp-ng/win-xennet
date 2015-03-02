@@ -1708,6 +1708,9 @@ fail1:
     return status;
 }
 
+#pragma prefast(push)
+#pragma prefast(disable:6102)
+
 #define READ_PROPERTY(field, name, defaultval, handle)  \
     do {                                                \
         NDIS_STATUS                     _Status;        \
@@ -1762,6 +1765,8 @@ fail1:
 }
 
 #undef READ_PROPERTY
+
+#pragma prefast(pop)
 
 static NDIS_STATUS
 AdapterSetRegistrationAttributes(
