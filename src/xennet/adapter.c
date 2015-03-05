@@ -1151,17 +1151,16 @@ __CopyBuffer(
     IN  PVOID               Buffer,
     IN  ULONG               BufferLength,
     IN  PVOID               Source,
-    IN OUT PULONG           SourceLength
+    IN  ULONG               SourceLength
     )
 {
-    if (BufferLength >= *SourceLength) {
-        RtlCopyMemory(Buffer, Source, *SourceLength);
+    if (BufferLength >= SourceLength) {
+        RtlCopyMemory(Buffer, Source, SourceLength);
         return NDIS_STATUS_SUCCESS;
-    } else {
-        *SourceLength = BufferLength;
-        RtlCopyMemory(Buffer, Source, *SourceLength);
-        return NDIS_STATUS_BUFFER_TOO_SHORT;
     }
+
+    RtlCopyMemory(Buffer, Source, BufferLength);
+    return NDIS_STATUS_BUFFER_TOO_SHORT;
 }
 
 static FORCEINLINE NDIS_STATUS
@@ -1172,14 +1171,14 @@ __SetUlong(
     IN OUT PULONG           SourceLength
     )
 {
+    *SourceLength = sizeof(ULONG);
+
     if (BufferLength >= sizeof(ULONG)) {
-        *(PULONG)Buffer = Source;
-        *SourceLength = sizeof(ULONG);
+        *(PULONG)Buffer = (ULONG)Source;
         return NDIS_STATUS_SUCCESS;
-    } else {
-        *SourceLength = 0;
-        return NDIS_STATUS_BUFFER_TOO_SHORT;
     }
+
+    return NDIS_STATUS_BUFFER_TOO_SHORT;
 }
 
 static FORCEINLINE NDIS_STATUS
@@ -1190,18 +1189,20 @@ __SetUlong64(
     IN OUT PULONG           SourceLength
     )
 {
+    *SourceLength = sizeof(ULONGLONG);
+
     if (BufferLength >= sizeof(ULONGLONG)) {
         *(PULONGLONG)Buffer = Source;
-        *SourceLength = sizeof(ULONGLONG);
         return NDIS_STATUS_SUCCESS;
-    } else if (BufferLength == sizeof(ULONG)) {
+    }
+
+    if (BufferLength >= sizeof(ULONG)) {
         *(PULONG)Buffer = (ULONG)Source;
         *SourceLength = sizeof(ULONG);
-        return NDIS_STATUS_BUFFER_TOO_SHORT;
-    } else {
-        *SourceLength = 0;
-        return NDIS_STATUS_BUFFER_TOO_SHORT;
+        return NDIS_STATUS_SUCCESS;
     }
+
+    return NDIS_STATUS_BUFFER_TOO_SHORT;
 }
 
 NDIS_STATUS
@@ -1230,7 +1231,7 @@ AdapterQueryInformation(
         ndisStatus = __CopyBuffer(Buffer,
                                   BufferLength,
                                   &Adapter->Capabilities,
-                                  &BytesWritten);
+                                  BytesWritten);
         break;
 
     case OID_PNP_QUERY_POWER:
@@ -1244,7 +1245,7 @@ AdapterQueryInformation(
         ndisStatus = __CopyBuffer(Buffer,
                                   BufferLength,
                                   &XennetSupportedOids[0],
-                                  &BytesWritten);
+                                  BytesWritten);
         break;
 
     case OID_GEN_HARDWARE_STATUS:
@@ -1288,7 +1289,7 @@ AdapterQueryInformation(
         ndisStatus = __CopyBuffer(Buffer,
                                   BufferLength,
                                   COMPANY_NAME_STR,
-                                  &BytesWritten);
+                                  BytesWritten);
         break;
 
     case OID_GEN_VENDOR_DRIVER_VERSION:
@@ -1336,7 +1337,7 @@ AdapterQueryInformation(
         ndisStatus = __CopyBuffer(Buffer,
                                   BufferLength,
                                   &EthernetAddress,
-                                  &BytesWritten);
+                                  BytesWritten);
         break;
 
     case OID_802_3_CURRENT_ADDRESS:
@@ -1347,7 +1348,7 @@ AdapterQueryInformation(
         ndisStatus = __CopyBuffer(Buffer,
                                   BufferLength,
                                   &EthernetAddress,
-                                  &BytesWritten);
+                                  BytesWritten);
         break;
 
     case OID_GEN_MAXIMUM_FRAME_SIZE:
