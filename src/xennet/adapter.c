@@ -477,7 +477,7 @@ invalid_parameter:
                          (x) == NDIS_OFFLOAD_PARAMETERS_RX_ENABLED_TX_DISABLED)
 #define TX_ENABLED(x)   ((x) == NDIS_OFFLOAD_PARAMETERS_TX_RX_ENABLED ||            \
                          (x) == NDIS_OFFLOAD_PARAMETERS_TX_ENABLED_RX_DISABLED)
-#define CHANGE(x, y)    (((x) == (y)) ? 0 : (((x) = (y)) != (y)))
+#define CHANGE(x, y)    (((x) == (y)) ? 0 : (((x) = (y)), 1))
 
 static NDIS_STATUS
 AdapterGetTcpOffloadParameters(
