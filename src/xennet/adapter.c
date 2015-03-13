@@ -30,6 +30,7 @@
  */
 
 #include <ndis.h>
+#include <stdlib.h>
 #include "adapter.h"
 #include "transmitter.h"
 #include "receiver.h"
@@ -1064,15 +1065,17 @@ AdapterSetInformation(
     IN  PNDIS_OID_REQUEST   Request
     )
 {
-    PVOID           Buffer;
-    ULONG           BufferLength;
-    ULONG           BytesNeeded;
-    ULONG           BytesRead;
-    NDIS_STATUS     ndisStatus;
+    PVOID                   Buffer;
+    ULONG                   BufferLength;
+    ULONG                   BytesNeeded;
+    ULONG                   BytesRead;
+    BOOLEAN                 Warn;
+    NDIS_STATUS             ndisStatus;
 
     Buffer = Request->DATA.SET_INFORMATION.InformationBuffer;
     BufferLength = Request->DATA.SET_INFORMATION.InformationBufferLength;
     BytesNeeded = BytesRead = 0;
+    Warn = TRUE;
     ndisStatus = NDIS_STATUS_SUCCESS;
 
     switch (Request->DATA.SET_INFORMATION.Oid) {
@@ -1134,7 +1137,12 @@ AdapterSetInformation(
 
     case OID_GEN_INTERRUPT_MODERATION:
     case OID_GEN_MACHINE_NAME:
+        Warn = FALSE;
+        /*FALLTHRU*/
     default:
+        if (Warn)
+            Warning("UNSUPPORTED OID %08x\n", Request->DATA.QUERY_INFORMATION.Oid);
+
         ndisStatus = NDIS_STATUS_NOT_SUPPORTED;
         break;
     }
@@ -1148,61 +1156,55 @@ AdapterSetInformation(
 
 static FORCEINLINE NDIS_STATUS
 __CopyBuffer(
-    IN  PVOID               Buffer,
-    IN  ULONG               BufferLength,
-    IN  PVOID               Source,
-    IN  ULONG               SourceLength
+    IN  PVOID   Destination,
+    IN  ULONG   DestinationLength,
+    IN  PVOID   Source,
+    IN  ULONG   SourceLength,
+    OUT PULONG  CopyLength
     )
 {
-    if (BufferLength >= SourceLength) {
-        RtlCopyMemory(Buffer, Source, SourceLength);
-        return NDIS_STATUS_SUCCESS;
-    }
+    *CopyLength = __min(SourceLength, DestinationLength);
+    RtlCopyMemory(Destination, Source, *CopyLength);
 
-    RtlCopyMemory(Buffer, Source, BufferLength);
-    return NDIS_STATUS_BUFFER_TOO_SHORT;
+    return (DestinationLength >= SourceLength) ?
+           NDIS_STATUS_SUCCESS :
+           NDIS_STATUS_BUFFER_TOO_SHORT;
 }
 
 static FORCEINLINE NDIS_STATUS
 __SetUlong(
-    IN  PVOID               Buffer,
-    IN  ULONG               BufferLength,
-    IN  ULONG               Source,
-    IN OUT PULONG           SourceLength
+    IN  PVOID   Destination,
+    IN  ULONG   DestinationLength,
+    IN  ULONG   Source,
+    OUT PULONG  CopyLength
     )
 {
-    *SourceLength = sizeof(ULONG);
-
-    if (BufferLength >= sizeof(ULONG)) {
-        *(PULONG)Buffer = (ULONG)Source;
-        return NDIS_STATUS_SUCCESS;
-    }
-
-    return NDIS_STATUS_BUFFER_TOO_SHORT;
+    return __CopyBuffer(Destination,
+                        DestinationLength & ~3,
+                        &Source,
+                        sizeof (ULONG),
+                        CopyLength);
 }
 
 static FORCEINLINE NDIS_STATUS
 __SetUlong64(
-    IN  PVOID               Buffer,
-    IN  ULONG               BufferLength,
-    IN  ULONGLONG           Source,
-    IN OUT PULONG           SourceLength
+    IN  PVOID   Destination,
+    IN  ULONG   DestinationLength,
+    IN  ULONG64 Source,
+    OUT PULONG  CopyLength
     )
 {
-    *SourceLength = sizeof(ULONGLONG);
+    NDIS_STATUS ndisStatus;
 
-    if (BufferLength >= sizeof(ULONGLONG)) {
-        *(PULONGLONG)Buffer = Source;
-        return NDIS_STATUS_SUCCESS;
-    }
+    ndisStatus =  __CopyBuffer(Destination,
+                               DestinationLength & ~3,
+                               &Source,
+                               sizeof (ULONG64),
+                               CopyLength);
+    if (DestinationLength >= 4)
+        ndisStatus = NDIS_STATUS_SUCCESS;
 
-    if (BufferLength >= sizeof(ULONG)) {
-        *(PULONG)Buffer = (ULONG)Source;
-        *SourceLength = sizeof(ULONG);
-        return NDIS_STATUS_SUCCESS;
-    }
-
-    return NDIS_STATUS_BUFFER_TOO_SHORT;
+    return ndisStatus;
 }
 
 NDIS_STATUS
@@ -1211,27 +1213,30 @@ AdapterQueryInformation(
     IN  PNDIS_OID_REQUEST   Request
     )
 {
-    PVOID           Buffer;
-    ULONG           BufferLength;
-    ULONG           BytesNeeded;
-    ULONG           BytesWritten;
-    ULONG           Value32;
-    ULONGLONG       Value64;
-    ETHERNET_ADDRESS    EthernetAddress;
-    NDIS_STATUS     ndisStatus;
+    PVOID                   Buffer;
+    ULONG                   BufferLength;
+    ULONG                   BytesNeeded;
+    ULONG                   BytesWritten;
+    ULONG                   Value32;
+    ULONGLONG               Value64;
+    ETHERNET_ADDRESS        EthernetAddress;
+    BOOLEAN                 Warn;
+    NDIS_STATUS             ndisStatus;
 
     Buffer = Request->DATA.QUERY_INFORMATION.InformationBuffer;
     BufferLength = Request->DATA.QUERY_INFORMATION.InformationBufferLength;
-    BytesNeeded = BytesWritten = sizeof(ULONG);
+    BytesNeeded = BytesWritten = 0;
+    Warn = TRUE;
     ndisStatus = NDIS_STATUS_SUCCESS;
 
     switch (Request->DATA.QUERY_INFORMATION.Oid) {
     case OID_PNP_CAPABILITIES:
-        BytesNeeded = BytesWritten = sizeof(Adapter->Capabilities);
+        BytesNeeded = sizeof(Adapter->Capabilities);
         ndisStatus = __CopyBuffer(Buffer,
                                   BufferLength,
                                   &Adapter->Capabilities,
-                                  BytesWritten);
+                                  BytesNeeded,
+                                  &BytesWritten);
         break;
 
     case OID_PNP_QUERY_POWER:
@@ -1241,14 +1246,16 @@ AdapterQueryInformation(
         break;
 
     case OID_GEN_SUPPORTED_LIST:
-        BytesNeeded = BytesWritten = sizeof(XennetSupportedOids);
+        BytesNeeded = sizeof(XennetSupportedOids);
         ndisStatus = __CopyBuffer(Buffer,
                                   BufferLength,
                                   &XennetSupportedOids[0],
-                                  BytesWritten);
+                                  BytesNeeded,
+                                  &BytesWritten);
         break;
 
     case OID_GEN_HARDWARE_STATUS:
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 NdisHardwareStatusReady,
@@ -1257,6 +1264,7 @@ AdapterQueryInformation(
 
     case OID_GEN_MEDIA_SUPPORTED:
     case OID_GEN_MEDIA_IN_USE:
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 XENNET_MEDIA_TYPE,
@@ -1266,6 +1274,7 @@ AdapterQueryInformation(
     case OID_GEN_MAXIMUM_LOOKAHEAD:
     case OID_GEN_TRANSMIT_BLOCK_SIZE:
     case OID_GEN_RECEIVE_BLOCK_SIZE:
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 Adapter->MaximumFrameSize,
@@ -1278,6 +1287,7 @@ AdapterQueryInformation(
                     &Adapter->VifInterface,
                     (PULONG)&Value32);
         Value32 *= Adapter->MaximumFrameSize;
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 Value32,
@@ -1285,14 +1295,16 @@ AdapterQueryInformation(
         break;
 
     case OID_GEN_VENDOR_DESCRIPTION:
-        BytesNeeded = BytesWritten = (ULONG)strlen(COMPANY_NAME_STR) + 1;
+        BytesNeeded = (ULONG)strlen(COMPANY_NAME_STR) + 1;
         ndisStatus = __CopyBuffer(Buffer,
                                   BufferLength,
                                   COMPANY_NAME_STR,
-                                  BytesWritten);
+                                  BytesNeeded,
+                                  &BytesWritten);
         break;
 
     case OID_GEN_VENDOR_DRIVER_VERSION:
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 ((MAJOR_VERSION << 8) | MINOR_VERSION) << 8,
@@ -1300,6 +1312,7 @@ AdapterQueryInformation(
         break;
 
     case OID_GEN_DRIVER_VERSION:
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 (6 << 8) | 0, // NDIS 6.0
@@ -1307,6 +1320,7 @@ AdapterQueryInformation(
         break;
 
     case OID_GEN_MAC_OPTIONS:
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 XENNET_MAC_OPTIONS,
@@ -1314,7 +1328,7 @@ AdapterQueryInformation(
         break;
 
     case OID_GEN_STATISTICS:
-        BytesNeeded = BytesWritten = sizeof(NDIS_STATISTICS_INFO);
+        BytesNeeded = sizeof(NDIS_STATISTICS_INFO);
         ndisStatus = AdapterQueryGeneralStatistics(Adapter,
                                                    (PNDIS_STATISTICS_INFO)Buffer,
                                                    BufferLength,
@@ -1333,25 +1347,28 @@ AdapterQueryInformation(
         XENVIF_VIF(MacQueryPermanentAddress,
                     &Adapter->VifInterface,
                     &EthernetAddress);
-        BytesNeeded = BytesWritten = sizeof(ETHERNET_ADDRESS);
+        BytesNeeded = sizeof(ETHERNET_ADDRESS);
         ndisStatus = __CopyBuffer(Buffer,
                                   BufferLength,
                                   &EthernetAddress,
-                                  BytesWritten);
+                                  BytesNeeded,
+                                  &BytesWritten);
         break;
 
     case OID_802_3_CURRENT_ADDRESS:
         XENVIF_VIF(MacQueryCurrentAddress,
                     &Adapter->VifInterface,
                     &EthernetAddress);
-        BytesNeeded = BytesWritten = sizeof(ETHERNET_ADDRESS);
+        BytesNeeded = sizeof(ETHERNET_ADDRESS);
         ndisStatus = __CopyBuffer(Buffer,
                                   BufferLength,
                                   &EthernetAddress,
-                                  BytesWritten);
+                                  BytesNeeded,
+                                  &BytesWritten);
         break;
 
     case OID_GEN_MAXIMUM_FRAME_SIZE:
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 Adapter->MaximumFrameSize -
@@ -1360,6 +1377,7 @@ AdapterQueryInformation(
         break;
 
     case OID_GEN_MAXIMUM_TOTAL_SIZE:
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 Adapter->MaximumFrameSize -
@@ -1369,6 +1387,7 @@ AdapterQueryInformation(
         break;
 
     case OID_GEN_CURRENT_LOOKAHEAD:
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 Adapter->CurrentLookahead,
@@ -1376,6 +1395,7 @@ AdapterQueryInformation(
         break;
 
     case OID_GEN_VENDOR_ID:
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 0x5853,
@@ -1388,6 +1408,7 @@ AdapterQueryInformation(
                    NULL,
                    &Value64,
                    NULL);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 (ULONG)(Value64 / 100),
@@ -1400,6 +1421,7 @@ AdapterQueryInformation(
                     (PNET_IF_MEDIA_CONNECT_STATE)&Value32,
                     NULL,
                     NULL);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 Value32,
@@ -1407,6 +1429,7 @@ AdapterQueryInformation(
         break;
 
     case OID_GEN_MAXIMUM_SEND_PACKETS:
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 16,
@@ -1415,6 +1438,7 @@ AdapterQueryInformation(
 
     case OID_GEN_CURRENT_PACKET_FILTER:
         AdapterGetPacketFilter(Adapter, &Value32);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 Value32,
@@ -1423,6 +1447,7 @@ AdapterQueryInformation(
 
     case OID_GEN_XMIT_OK:
         AdapterGetXmitOk(Adapter, &Value64);
+        BytesNeeded = sizeof(ULONG64);
         ndisStatus = __SetUlong64(Buffer,
                                   BufferLength,
                                   Value64,
@@ -1431,6 +1456,7 @@ AdapterQueryInformation(
 
     case OID_GEN_RCV_OK:
         AdapterGetRcvOk(Adapter, &Value64);
+        BytesNeeded = sizeof(ULONG64);
         ndisStatus = __SetUlong64(Buffer,
                                   BufferLength,
                                   Value64,
@@ -1439,6 +1465,7 @@ AdapterQueryInformation(
 
     case OID_GEN_XMIT_ERROR:
         AdapterGetXmitError(Adapter, &Value32);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 Value32,
@@ -1447,6 +1474,7 @@ AdapterQueryInformation(
 
     case OID_GEN_RCV_ERROR:
         AdapterGetRcvError(Adapter, &Value32);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 Value32,
@@ -1459,6 +1487,7 @@ AdapterQueryInformation(
     case OID_802_3_RCV_ERROR_ALIGNMENT:
     case OID_802_3_XMIT_ONE_COLLISION:
     case OID_802_3_XMIT_MORE_COLLISIONS:
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 0,
@@ -1466,6 +1495,7 @@ AdapterQueryInformation(
         break;
 
     case OID_802_3_MAXIMUM_LIST_SIZE:
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 32,
@@ -1477,6 +1507,7 @@ AdapterQueryInformation(
                    &Adapter->VifInterface,
                    XENVIF_TRANSMITTER_UNICAST_OCTETS,
                    &Value64);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 (ULONG)Value64,
@@ -1488,6 +1519,7 @@ AdapterQueryInformation(
                    &Adapter->VifInterface,
                    XENVIF_TRANSMITTER_UNICAST_PACKETS,
                    &Value64);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 (ULONG)Value64,
@@ -1499,6 +1531,7 @@ AdapterQueryInformation(
                    &Adapter->VifInterface,
                    XENVIF_TRANSMITTER_MULTICAST_OCTETS,
                    &Value64);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 (ULONG)Value64,
@@ -1510,6 +1543,7 @@ AdapterQueryInformation(
                    &Adapter->VifInterface,
                    XENVIF_TRANSMITTER_MULTICAST_PACKETS,
                    &Value64);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 (ULONG)Value64,
@@ -1521,6 +1555,7 @@ AdapterQueryInformation(
                    &Adapter->VifInterface,
                    XENVIF_TRANSMITTER_BROADCAST_OCTETS,
                    &Value64);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 (ULONG)Value64,
@@ -1532,6 +1567,7 @@ AdapterQueryInformation(
                    &Adapter->VifInterface,
                    XENVIF_TRANSMITTER_BROADCAST_PACKETS,
                    &Value64);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 (ULONG)Value64,
@@ -1543,6 +1579,7 @@ AdapterQueryInformation(
                    &Adapter->VifInterface,
                    XENVIF_RECEIVER_UNICAST_OCTETS,
                    &Value64);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 (ULONG)Value64,
@@ -1554,6 +1591,7 @@ AdapterQueryInformation(
                    &Adapter->VifInterface,
                    XENVIF_RECEIVER_UNICAST_PACKETS,
                    &Value64);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 (ULONG)Value64,
@@ -1565,6 +1603,7 @@ AdapterQueryInformation(
                    &Adapter->VifInterface,
                    XENVIF_RECEIVER_MULTICAST_OCTETS,
                    &Value64);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 (ULONG)Value64,
@@ -1576,6 +1615,7 @@ AdapterQueryInformation(
                    &Adapter->VifInterface,
                    XENVIF_RECEIVER_MULTICAST_PACKETS,
                    &Value64);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 (ULONG)Value64,
@@ -1587,6 +1627,7 @@ AdapterQueryInformation(
                    &Adapter->VifInterface,
                    XENVIF_RECEIVER_BROADCAST_OCTETS,
                    &Value64);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 (ULONG)Value64,
@@ -1598,6 +1639,7 @@ AdapterQueryInformation(
                    &Adapter->VifInterface,
                    XENVIF_RECEIVER_BROADCAST_PACKETS,
                    &Value64);
+        BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 (ULONG)Value64,
@@ -1615,19 +1657,20 @@ AdapterQueryInformation(
     case OID_IP4_OFFLOAD_STATS:
     case OID_IP6_OFFLOAD_STATS:
     case OID_GEN_SUPPORTED_GUIDS:
-
         // We don't handle these since NDIS 6.0 is supposed to do this for us
     case OID_GEN_MAC_ADDRESS:
     case OID_GEN_MAX_LINK_SPEED:
-
         // ignore these common unwanted OIDs
 	case OID_GEN_INIT_TIME_MS:
 	case OID_GEN_RESET_COUNTS:
 	case OID_GEN_MEDIA_SENSE_COUNTS:
-
+        Warn = FALSE;
+        /*FALLTHRU*/
     default:
+        if (Warn)
+            Warning("UNSUPPORTED OID %08x\n", Request->DATA.QUERY_INFORMATION.Oid);
+
         ndisStatus = NDIS_STATUS_NOT_SUPPORTED;
-        BytesNeeded = 0;
         break;
     }
 
