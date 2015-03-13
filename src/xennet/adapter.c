@@ -1093,8 +1093,8 @@ AdapterSetInformation(
     case OID_GEN_CURRENT_PACKET_FILTER:
         BytesNeeded = sizeof(ULONG);
         if (BufferLength == BytesNeeded) {
-            AdapterSetPacketFilter(Adapter,
-                                   (PULONG)Buffer);
+            ndisStatus = AdapterSetPacketFilter(Adapter,
+                                                (PULONG)Buffer);
             BytesRead = sizeof(ULONG);
         }
         break;
