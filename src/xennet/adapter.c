@@ -189,6 +189,71 @@ AdapterVifCallback(
     va_end(Arguments);
 }
 
+#define DISPLAY_OFFLOAD(_Offload)                                   \
+        do {                                                        \
+            if ((_Offload).Checksum.IPv4Receive.IpChecksum)         \
+                Info("Checksum.IPv4Receive.IpChecksum ON\n");       \
+            else                                                    \
+                Info("Checksum.IPv4Receive.IpChecksum OFF\n");      \
+                                                                    \
+            if ((_Offload).Checksum.IPv4Receive.TcpChecksum)        \
+                Info("Checksum.IPv4Receive.TcpChecksum ON\n");      \
+            else                                                    \
+                Info("Checksum.IPv4Receive.TcpChecksum OFF\n");     \
+                                                                    \
+            if ((_Offload).Checksum.IPv4Receive.UdpChecksum)        \
+                Info("Checksum.IPv4Receive.UdpChecksum ON\n");      \
+            else                                                    \
+                Info("Checksum.IPv4Receive.UdpChecksum OFF\n");     \
+                                                                    \
+            if ((_Offload).Checksum.IPv6Receive.TcpChecksum)        \
+                Info("Checksum.IPv6Receive.TcpChecksum ON\n");      \
+            else                                                    \
+                Info("Checksum.IPv6Receive.TcpChecksum OFF\n");     \
+                                                                    \
+            if ((_Offload).Checksum.IPv6Receive.UdpChecksum)        \
+                Info("Checksum.IPv6Receive.UdpChecksum ON\n");      \
+            else                                                    \
+                Info("Checksum.IPv6Receive.UdpChecksum OFF\n");     \
+                                                                    \
+            if ((_Offload).Checksum.IPv4Transmit.IpChecksum)        \
+                Info("Checksum.IPv4Transmit.IpChecksum ON\n");      \
+            else                                                    \
+                Info("Checksum.IPv4Transmit.IpChecksum OFF\n");     \
+                                                                    \
+            if ((_Offload).Checksum.IPv4Transmit.TcpChecksum)       \
+                Info("Checksum.IPv4Transmit.TcpChecksum ON\n");     \
+            else                                                    \
+                Info("Checksum.IPv4Transmit.TcpChecksum OFF\n");    \
+                                                                    \
+            if ((_Offload).Checksum.IPv4Transmit.UdpChecksum)       \
+                Info("Checksum.IPv4Transmit.UdpChecksum ON\n");     \
+            else                                                    \
+                Info("Checksum.IPv4Transmit.UdpChecksum OFF\n");    \
+                                                                    \
+            if ((_Offload).Checksum.IPv6Transmit.TcpChecksum)       \
+                Info("Checksum.IPv6Transmit.TcpChecksum ON\n");     \
+            else                                                    \
+                Info("Checksum.IPv6Transmit.TcpChecksum OFF\n");    \
+                                                                    \
+            if ((_Offload).Checksum.IPv6Transmit.UdpChecksum)       \
+                Info("Checksum.IPv6Transmit.UdpChecksum ON\n");     \
+            else                                                    \
+                Info("Checksum.IPv6Transmit.UdpChecksum OFF\n");    \
+                                                                    \
+            if ((_Offload).LsoV2.IPv4.MaxOffLoadSize != 0)          \
+                Info("LsoV2.IPv4.MaxOffLoadSize = %u\n",            \
+                     (_Offload).LsoV2.IPv4.MaxOffLoadSize);         \
+            else                                                    \
+                Info("LsoV2.IPv4 OFF\n");                           \
+                                                                    \
+            if ((_Offload).LsoV2.IPv6.MaxOffLoadSize != 0)          \
+                Info("LsoV2.IPv6.MaxOffLoadSize = %u\n",            \
+                     (_Offload).LsoV2.IPv6.MaxOffLoadSize);         \
+            else                                                    \
+                Info("LsoV2.IPv6 OFF\n");                           \
+        } while (FALSE)
+
 static VOID
 AdapterIndicateOffloadChanged(
     IN  PXENNET_ADAPTER         Adapter
@@ -283,7 +348,7 @@ AdapterIndicateOffloadChanged(
 
     if (!RtlEqualMemory(&Adapter->Offload, &Offload, sizeof(NDIS_OFFLOAD))) {
         Adapter->Offload = Offload;
-        // DISPPLAY_OFFLOAD(Offload);
+        DISPLAY_OFFLOAD(Offload);
     }
 
     RtlZeroMemory(&Status, sizeof(NDIS_STATUS_INDICATION));
@@ -2067,7 +2132,7 @@ AdapterSetOffloadAttributes(
 
     if (!RtlEqualMemory(&Adapter->Offload, &Default, sizeof (NDIS_OFFLOAD))) {
         Adapter->Offload = Default;
-        //DISPLAY_OFFLOAD(Default);
+        DISPLAY_OFFLOAD(Default);
     }
 
     RtlZeroMemory(&Attribs, sizeof(NDIS_MINIPORT_ADAPTER_OFFLOAD_ATTRIBUTES));
