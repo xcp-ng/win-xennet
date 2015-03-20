@@ -29,6 +29,8 @@
  * SUCH DAMAGE.
  */
 
+#include <ndis.h>
+#include <procgrp.h>
 #include "receiver.h"
 #include "adapter.h"
 #include <util.h>
@@ -39,7 +41,8 @@ struct _XENNET_RECEIVER {
     PXENNET_ADAPTER             Adapter;
     NDIS_HANDLE                 NetBufferListPool;
     PNET_BUFFER_LIST            PutList;
-    PNET_BUFFER_LIST            GetList[MAXIMUM_PROCESSORS];
+    PNET_BUFFER_LIST            *GetList;
+    ULONG                       GetListCount;
     LONG                        InNDIS;
     LONG                        InNDISMax;
     XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
@@ -56,22 +59,23 @@ __ReceiverAllocateNetBufferList(
     IN  ULONG               Length
     )
 {
-    ULONG                   Cpu;
+    ULONG                   Index;
     PNET_BUFFER_LIST        NetBufferList;
 
-    Cpu = KeGetCurrentProcessorNumber();
+    Index = KeGetCurrentProcessorNumberEx(NULL);
+    ASSERT3U(Index, <, Receiver->GetListCount);
 
-    NetBufferList = Receiver->GetList[Cpu];
+    NetBufferList = Receiver->GetList[Index];
 
-    if (NetBufferList == NULL)
-        Receiver->GetList[Cpu] = InterlockedExchangePointer(&Receiver->PutList, NULL);
-
-    NetBufferList = Receiver->GetList[Cpu];
+    if (NetBufferList == NULL) {
+        Receiver->GetList[Index] = InterlockedExchangePointer(&Receiver->PutList, NULL);
+        NetBufferList = Receiver->GetList[Index];
+    }
 
     if (NetBufferList != NULL) {
         PNET_BUFFER NetBuffer;
 
-        Receiver->GetList[Cpu] = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
+        Receiver->GetList[Index] = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
         NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
 
         NetBuffer = NET_BUFFER_LIST_FIRST_NB(NetBufferList);
@@ -285,6 +289,16 @@ ReceiverInitialize(
     RtlZeroMemory(*Receiver, sizeof(XENNET_RECEIVER));
     (*Receiver)->Adapter = Adapter;
 
+    (*Receiver)->GetListCount = KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS);
+    (*Receiver)->GetList = ExAllocatePoolWithTag(NonPagedPool,
+                                                 sizeof(PNET_BUFFER_LIST) *
+                                                 (*Receiver)->GetListCount,
+                                                 RECEIVER_POOL_TAG);
+
+    status = NDIS_STATUS_RESOURCES;
+    if ((*Receiver)->GetList == NULL)
+        goto fail2;
+
     RtlZeroMemory(&Params, sizeof(NET_BUFFER_LIST_POOL_PARAMETERS));
     Params.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
     Params.Header.Revision = NET_BUFFER_LIST_POOL_PARAMETERS_REVISION_1;
@@ -299,11 +313,18 @@ ReceiverInitialize(
 
     status = NDIS_STATUS_RESOURCES;
     if ((*Receiver)->NetBufferListPool == NULL)
-        goto fail2;
+        goto fail3;
 
     return NDIS_STATUS_SUCCESS;
 
+fail3:
+    ExFreePoolWithTag((*Receiver)->GetList, RECEIVER_POOL_TAG);
+    (*Receiver)->GetListCount = 0;
+
 fail2:
+    ExFreePoolWithTag(*Receiver, RECEIVER_POOL_TAG);
+    *Receiver = NULL;
+
 fail1:
     return status;
 }
@@ -313,13 +334,14 @@ ReceiverTeardown(
     IN  PXENNET_RECEIVER    Receiver
     )
 {
-    ULONG               Cpu;
-    PNET_BUFFER_LIST    NetBufferList;
+    ULONG                   Index;
+    PNET_BUFFER_LIST        NetBufferList;
 
     ASSERT(Receiver != NULL);
 
-    for (Cpu = 0; Cpu < MAXIMUM_PROCESSORS; Cpu++) {
-        NetBufferList = Receiver->GetList[Cpu];
+    for (Index = 0; Index < Receiver->GetListCount; Index++) {
+        NetBufferList = Receiver->GetList[Index];
+
         while (NetBufferList != NULL) {
             PNET_BUFFER_LIST    Next;
 
@@ -346,6 +368,9 @@ ReceiverTeardown(
 
     NdisFreeNetBufferListPool(Receiver->NetBufferListPool);
     Receiver->NetBufferListPool = NULL;
+
+    ExFreePoolWithTag(Receiver->GetList, RECEIVER_POOL_TAG);
+    Receiver->GetListCount = 0;
 
     Receiver->Adapter = NULL;
 
