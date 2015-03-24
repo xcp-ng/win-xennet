@@ -32,7 +32,6 @@
 #define INITGUID 1
 
 #include <ndis.h>
-#include <procgrp.h>
 #include "adapter.h"
 #include <version.h>
 #include "dbg_print.h"
@@ -412,7 +411,6 @@ DriverEntry (
     ULONG FailDeviceControl;
 
     ExInitializeDriverRuntime(DrvRtPoolNxOptIn);
-    WdmlibProcgrpInitialize();
 
     Trace("====>\n");
 
