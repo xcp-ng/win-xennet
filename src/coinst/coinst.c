@@ -65,6 +65,12 @@ __user_code;
 #define ADDRESSES_KEY   \
         SERVICE_KEY(XENVIF) ## "\\Addresses"
 
+#define STATUS_KEY  \
+        SERVICE_KEY(XENVIF) ## "\\Status"
+
+#define ENUM_KEY  \
+        SERVICE_KEY(XENVIF) ## "\\Enum"
+
 #define UNPLUG_KEY  \
         SERVICE_KEY(XENFILT) ## "\\Unplug"
 
@@ -75,8 +81,6 @@ __user_code;
 
 #define NSI_KEY \
         CONTROL_KEY ## "\\Nsi"
-
-#define ENUM_KEY "SYSTEM\\CurrentControlSet\\Enum"
 
 static VOID
 #pragma prefast(suppress:6262) // Function uses '1036' bytes of stack: exceeds /analyze:stacksize'1024'
@@ -2235,6 +2239,147 @@ fail1:
 }
 
 static BOOLEAN
+GetEnumCount(
+    OUT PDWORD  Count
+    )
+{
+    HKEY        EnumKey;
+    HRESULT     Error;
+    DWORD       ValueLength;
+    DWORD       Value;
+    DWORD       Type;
+
+    Error = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+                         ENUM_KEY,
+                         0,
+                         KEY_READ,
+                         &EnumKey);
+    if (Error != ERROR_SUCCESS) {
+        SetLastError(Error);
+        goto fail1;
+    }
+
+    ValueLength = sizeof (Value);
+
+    Error = RegQueryValueEx(EnumKey,
+                            "Count",
+                            NULL,
+                            &Type,
+                            (LPBYTE)&Value,
+                            &ValueLength);
+    if (Error != ERROR_SUCCESS) {
+        SetLastError(Error);
+        goto fail2;
+    }
+
+    if (Type != REG_DWORD) {
+        SetLastError(ERROR_BAD_FORMAT);
+        goto fail3;
+    }
+
+    *Count = Value;
+    Log("%u", *Count);
+
+    RegCloseKey(EnumKey);
+
+    return TRUE;
+
+fail3:
+    Log("fail3");
+
+fail2:
+    Log("fail2");
+
+    RegCloseKey(EnumKey);
+
+fail1:
+    Error = GetLastError();
+
+    {
+        PTCHAR  Message;
+        Message = __GetErrorMessage(Error);
+        Log("fail1 (%s)", Message);
+        LocalFree(Message);
+    }
+
+    return FALSE;
+}
+
+static BOOLEAN
+CheckStatus(
+    OUT PBOOLEAN    NeedReboot
+    )
+{
+    HKEY            StatusKey;
+    HRESULT         Error;
+    DWORD           ValueLength;
+    DWORD           Value;
+    DWORD           Type;
+
+    Error = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+                         STATUS_KEY,
+                         0,
+                         KEY_READ,
+                         &StatusKey);
+    if (Error != ERROR_SUCCESS) {
+        SetLastError(Error);
+        goto fail1;
+    }
+
+    ValueLength = sizeof (Value);
+
+    Error = RegQueryValueEx(StatusKey,
+                            "NeedReboot",
+                            NULL,
+                            &Type,
+                            (LPBYTE)&Value,
+                            &ValueLength);
+    if (Error != ERROR_SUCCESS) {
+        if (Error == ERROR_FILE_NOT_FOUND) {
+            Type = REG_DWORD;
+            Value = 0;
+        } else {
+            SetLastError(Error);
+            goto fail2;
+        }
+    }
+
+    if (Type != REG_DWORD) {
+        SetLastError(ERROR_BAD_FORMAT);
+        goto fail3;
+    }
+
+    *NeedReboot = (Value != 0) ? TRUE : FALSE;
+
+    if (*NeedReboot)
+        Log("NeedReboot");
+
+    RegCloseKey(StatusKey);
+
+    return TRUE;
+
+fail3:
+    Log("fail3");
+
+fail2:
+    Log("fail2");
+
+    RegCloseKey(StatusKey);
+
+fail1:
+    Error = GetLastError();
+
+    {
+        PTCHAR  Message;
+        Message = __GetErrorMessage(Error);
+        Log("fail1 (%s)", Message);
+        LocalFree(Message);
+    }
+
+    return FALSE;
+}
+
+static BOOLEAN
 RequestReboot(
     IN  HDEVINFO            DeviceInfoSet,
     IN  PSP_DEVINFO_DATA    DeviceInfoData
@@ -2304,6 +2449,7 @@ __DifInstallPostProcess(
     BOOLEAN                         Success;
     ETHERNET_ADDRESS                Address;
     PTCHAR                          SoftwareKeyName;
+    BOOLEAN                         NeedReboot;
     HRESULT                         Error;
 
     UNREFERENCED_PARAMETER(Context);
@@ -2340,11 +2486,11 @@ __DifInstallPostProcess(
     RegisterInterface("XENVIF", "VIF", XENVIF_VIF_INTERFACE_VERSION_MAX);
     RegisterInterface("XENBUS", "CACHE", XENBUS_CACHE_INTERFACE_VERSION_MAX);
 
-    if (SoftwareKeyName != NULL) {
-        (VOID) RequestReboot(DeviceInfoSet, DeviceInfoData);
+    NeedReboot = FALSE;
 
-        free(SoftwareKeyName);
-    }
+    Success = CheckStatus(&NeedReboot);
+    if (Success && NeedReboot)
+        (VOID) RequestReboot(DeviceInfoSet, DeviceInfoData);
 
     Log("<====");
 
@@ -2416,14 +2562,22 @@ __DifRemovePreProcess(
     IN  PCOINSTALLER_CONTEXT_DATA   Context
     )
 {
+    BOOLEAN                         Success;
+    DWORD                           Count;
+
+    UNREFERENCED_PARAMETER(DeviceInfoSet);
+    UNREFERENCED_PARAMETER(DeviceInfoData);
     UNREFERENCED_PARAMETER(Context);
 
     Log("====>");
 
-    (VOID) DeregisterAllInterfaces("XENVIF");
-    (VOID) DeregisterAllInterfaces("XENBUS");
-    (VOID) RemoveUnplugService("NICS", "XENNET");
-    (VOID) RequestReboot(DeviceInfoSet, DeviceInfoData);
+    Success = GetEnumCount(&Count);
+
+    if (Success && Count == 1) {
+        (VOID) DeregisterAllInterfaces("XENVIF");
+        (VOID) DeregisterAllInterfaces("XENBUS");
+        (VOID) RemoveUnplugService("NICS", "XENNET");
+    }
 
     Log("<====");
 
