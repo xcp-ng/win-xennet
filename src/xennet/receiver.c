@@ -39,7 +39,8 @@ struct _XENNET_RECEIVER {
     PXENNET_ADAPTER             Adapter;
     NDIS_HANDLE                 NetBufferListPool;
     PNET_BUFFER_LIST            PutList;
-    PNET_BUFFER_LIST            GetList[MAXIMUM_PROCESSORS];
+    PNET_BUFFER_LIST            GetList;
+    KSPIN_LOCK                  Lock;
     LONG                        InNDIS;
     LONG                        InNDISMax;
     XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
@@ -56,22 +57,19 @@ __ReceiverAllocateNetBufferList(
     IN  ULONG               Length
     )
 {
-    ULONG                   Cpu;
     PNET_BUFFER_LIST        NetBufferList;
 
-    Cpu = KeGetCurrentProcessorNumber();
+    ASSERT3U(KeGetCurrentIrql(), ==, DISPATCH_LEVEL);
+    KeAcquireSpinLockAtDpcLevel(&Receiver->Lock);
 
-    NetBufferList = Receiver->GetList[Cpu];
+    if (Receiver->GetList == NULL)
+        Receiver->GetList = InterlockedExchangePointer(&Receiver->PutList, NULL);
 
-    if (NetBufferList == NULL)
-        Receiver->GetList[Cpu] = InterlockedExchangePointer(&Receiver->PutList, NULL);
-
-    NetBufferList = Receiver->GetList[Cpu];
-
+    NetBufferList = Receiver->GetList;
     if (NetBufferList != NULL) {
         PNET_BUFFER NetBuffer;
 
-        Receiver->GetList[Cpu] = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
+        Receiver->GetList = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
         NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
 
         NetBuffer = NET_BUFFER_LIST_FIRST_NB(NetBufferList);
@@ -89,6 +87,8 @@ __ReceiverAllocateNetBufferList(
                                                               Length);
         ASSERT(IMPLY(NetBufferList != NULL, NET_BUFFER_LIST_NEXT_NBL(NetBufferList) == NULL));
     }
+
+    KeReleaseSpinLockFromDpcLevel(&Receiver->Lock);
 
     return NetBufferList;
 }        
@@ -301,6 +301,8 @@ ReceiverInitialize(
     if ((*Receiver)->NetBufferListPool == NULL)
         goto fail2;
 
+    KeInitializeSpinLock(&(*Receiver)->Lock);
+
     return NDIS_STATUS_SUCCESS;
 
 fail2:
@@ -313,23 +315,20 @@ ReceiverTeardown(
     IN  PXENNET_RECEIVER    Receiver
     )
 {
-    ULONG               Cpu;
-    PNET_BUFFER_LIST    NetBufferList;
+    PNET_BUFFER_LIST        NetBufferList;
 
     ASSERT(Receiver != NULL);
 
-    for (Cpu = 0; Cpu < MAXIMUM_PROCESSORS; Cpu++) {
-        NetBufferList = Receiver->GetList[Cpu];
-        while (NetBufferList != NULL) {
-            PNET_BUFFER_LIST    Next;
+    NetBufferList = Receiver->GetList;
+    while (NetBufferList != NULL) {
+        PNET_BUFFER_LIST    Next;
 
-            Next = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
-            NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
+        Next = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
+        NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
 
-            NdisFreeNetBufferList(NetBufferList);
+        NdisFreeNetBufferList(NetBufferList);
 
-            NetBufferList = Next;
-        }
+        NetBufferList = Next;
     }
 
     NetBufferList = Receiver->PutList;
