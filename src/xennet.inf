@@ -61,9 +61,9 @@ xennet_coinst_@MAJOR_VERSION@_@MINOR_VERSION@_@MICRO_VERSION@_@BUILD_NUMBER@.dll
 ; DisplayName		Section		DeviceID
 ; -----------		-------		--------
 
-%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_XSC000&DEV_NET&REV_00000002
-%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_XS0001&DEV_NET&REV_00000002
-%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_XS0002&DEV_NET&REV_00000002
+%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_XSC000&DEV_NET&REV_08000002
+%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_XS0001&DEV_NET&REV_08000002
+%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_XS0002&DEV_NET&REV_08000002
 
 [XenNet_Inst] 
 Characteristics=0x84
