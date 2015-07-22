@@ -190,151 +190,6 @@ __FunctionName(
 #undef  _NAME
 }
 
-static PTCHAR
-GetProperty(
-    IN  HDEVINFO            DeviceInfoSet,
-    IN  PSP_DEVINFO_DATA    DeviceInfoData,
-    IN  DWORD               Index
-    )
-{
-    DWORD                   Type;
-    DWORD                   PropertyLength;
-    PTCHAR                  Property;
-    HRESULT                 Error;
-
-    if (!SetupDiGetDeviceRegistryProperty(DeviceInfoSet,
-                                          DeviceInfoData,
-                                          Index,
-                                          &Type,
-                                          NULL,
-                                          0,
-                                          &PropertyLength)) {
-        if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
-            goto fail1;
-    }
-
-    if (Type != REG_SZ) {
-        SetLastError(ERROR_BAD_FORMAT);
-        goto fail2;
-    }
-
-    PropertyLength += sizeof (TCHAR);
-
-    Property = calloc(1, PropertyLength);
-    if (Property == NULL)
-        goto fail3;
-
-    if (!SetupDiGetDeviceRegistryProperty(DeviceInfoSet,
-                                          DeviceInfoData,
-                                          Index,
-                                          NULL,
-                                          (PBYTE)Property,
-                                          PropertyLength,
-                                          NULL))
-        goto fail4;
-
-    return Property;
-
-fail4:
-    free(Property);
-
-fail3:
-    Log("fail3");
-
-fail2:
-    Log("fail2");
-
-fail1:
-    Error = GetLastError();
-
-    {
-        PTCHAR  Message;
-
-        Message = __GetErrorMessage(Error);
-        Log("fail1 (%s)", Message);
-        LocalFree(Message);
-    }
-
-    return NULL;
-}
-
-static BOOLEAN
-SetFriendlyName(
-    IN  HDEVINFO            DeviceInfoSet,
-    IN  PSP_DEVINFO_DATA    DeviceInfoData
-    )
-{
-    PTCHAR                  Description;
-    PTCHAR                  Location;
-    TCHAR                   FriendlyName[MAX_PATH];
-    DWORD                   FriendlyNameLength;
-    HRESULT                 Result;
-    HRESULT                 Error;
-
-    Description = GetProperty(DeviceInfoSet,
-                              DeviceInfoData,
-                              SPDRP_DEVICEDESC);
-    if (Description == NULL)
-        goto fail1;
-
-    Location = GetProperty(DeviceInfoSet,
-                           DeviceInfoData,
-                           SPDRP_LOCATION_INFORMATION);
-    if (Location == NULL)
-        goto fail2;
-
-    Result = StringCbPrintf(FriendlyName,
-                            MAX_PATH,
-                            "%s #%s",
-                            Description,
-                            Location);
-    if (!SUCCEEDED(Result))
-        goto fail3;
-
-    FriendlyNameLength = (DWORD)(strlen(FriendlyName) + sizeof (TCHAR));
-
-    if (!SetupDiSetDeviceRegistryProperty(DeviceInfoSet,
-                                          DeviceInfoData,
-                                          SPDRP_FRIENDLYNAME,
-                                          (PBYTE)FriendlyName,
-                                          FriendlyNameLength))
-        goto fail4;
-
-    Log("%s", FriendlyName);
-
-    free(Location);
-
-    free(Description);
-
-    return TRUE;
-
-fail4:
-    Log("fail4");
-
-fail3:
-    Log("fail3");
-
-    free(Location);
-
-fail2:
-    Log("fail2");
-
-    free(Description);
-
-fail1:
-    Error = GetLastError();
-
-    {
-        PTCHAR  Message;
-
-        Message = __GetErrorMessage(Error);
-        Log("fail1 (%s)", Message);
-        LocalFree(Message);
-    }
-
-    return FALSE;
-}
-
 static BOOLEAN
 CheckStatus(
     OUT PBOOLEAN    NeedReboot
@@ -476,41 +331,22 @@ __DifInstallPostProcess(
     IN  PCOINSTALLER_CONTEXT_DATA   Context
     )
 {
-    BOOLEAN                         Success;
     BOOLEAN                         NeedReboot;
-    HRESULT                         Error;
 
     UNREFERENCED_PARAMETER(Context);
 
     Log("====>");
 
-    Success = SetFriendlyName(DeviceInfoSet,
-                              DeviceInfoData);
-    if (!Success)
-        goto fail1;
-
     NeedReboot = FALSE;
 
-    Success = CheckStatus(&NeedReboot);
-    if (Success && NeedReboot)
+    (VOID) CheckStatus(&NeedReboot);
+
+    if (NeedReboot)
         (VOID) RequestReboot(DeviceInfoSet, DeviceInfoData);
 
     Log("<====");
 
     return NO_ERROR;
-
-fail1:
-    Error = GetLastError();
-
-    {
-        PTCHAR  Message;
-
-        Message = __GetErrorMessage(Error);
-        Log("fail1 (%s)", Message);
-        LocalFree(Message);
-    }
-
-    return Error;
 }
 
 static DECLSPEC_NOINLINE HRESULT
