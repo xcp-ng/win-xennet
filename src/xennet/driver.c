@@ -29,227 +29,21 @@
  * SUCH DAMAGE.
  */
 
-#define INITGUID 1
-
 #include <ndis.h>
-#include "adapter.h"
 #include <version.h>
+
+#include "driver.h"
+#include "miniport.h"
 #include "dbg_print.h"
 #include "assert.h"
 
 typedef struct _XENNET_DRIVER {
-    NDIS_HANDLE             MiniportHandle;
+    NDIS_HANDLE MiniportHandle;
 } XENNET_DRIVER;
 
 static XENNET_DRIVER Driver;
 
 extern PULONG InitSafeBootMode;
-
-MINIPORT_CANCEL_OID_REQUEST __AdapterCancelOidRequest;
-VOID
-__AdapterCancelOidRequest(
-    IN  NDIS_HANDLE     Handle,
-    IN  PVOID           Request
-    )
-{
-    UNREFERENCED_PARAMETER(Handle);
-    UNREFERENCED_PARAMETER(Request);
-}
-
-MINIPORT_CANCEL_SEND    __AdapterCancelSendNetBufferLists;
-VOID
-__AdapterCancelSendNetBufferLists(
-    IN  NDIS_HANDLE     Handle,
-    IN  PVOID           Cancel
-    )
-{
-    UNREFERENCED_PARAMETER(Handle);
-    UNREFERENCED_PARAMETER(Cancel);
-}
-
-MINIPORT_CHECK_FOR_HANG __AdapterCheckForHang;
-BOOLEAN
-__AdapterCheckForHang(
-    IN  NDIS_HANDLE     Handle
-    )
-{
-    UNREFERENCED_PARAMETER(Handle);
-    return FALSE;
-}
-
-MINIPORT_INITIALIZE __AdapterInitialize;
-NDIS_STATUS
-__AdapterInitialize(
-    IN  NDIS_HANDLE     Handle,
-    IN  NDIS_HANDLE     DriverContext,
-    IN  PNDIS_MINIPORT_INIT_PARAMETERS  Params
-    )
-{
-    PXENNET_ADAPTER     Adapter;
-    NDIS_STATUS         ndisStatus;
-
-    UNREFERENCED_PARAMETER(DriverContext);
-    UNREFERENCED_PARAMETER(Params);
-
-    ndisStatus = AdapterInitialize(Handle, &Adapter);
-    if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail1;
-
-    return ndisStatus;
-
-fail1:
-    Error("fail1\n");
-    return ndisStatus;
-}
-
-MINIPORT_HALT   __AdapterHalt;
-VOID
-__AdapterHalt(
-    IN  NDIS_HANDLE     Handle,
-    IN  NDIS_HALT_ACTION    Action
-    )
-{
-    PXENNET_ADAPTER     Adapter = (PXENNET_ADAPTER)Handle;
-
-    UNREFERENCED_PARAMETER(Action);
-
-    if (Adapter == NULL)
-        return;
-
-    (VOID) AdapterDisable(Adapter);
-
-    AdapterTeardown(Adapter);
-}
-
-MINIPORT_OID_REQUEST    __AdapterOidRequest;
-NDIS_STATUS
-__AdapterOidRequest(
-    IN  NDIS_HANDLE         Handle,
-    IN  PNDIS_OID_REQUEST   Request
-    )
-{
-    PXENNET_ADAPTER     Adapter = (PXENNET_ADAPTER)Handle;
-    NDIS_STATUS         ndisStatus;
-
-    switch (Request->RequestType) {
-        case NdisRequestSetInformation:
-            ndisStatus = AdapterSetInformation(Adapter, Request);
-            break;
-
-        case NdisRequestQueryInformation:
-        case NdisRequestQueryStatistics:
-            ndisStatus = AdapterQueryInformation(Adapter, Request);
-            break;
-
-        default:
-            ndisStatus = NDIS_STATUS_NOT_SUPPORTED;
-            break;
-    };
-
-    return ndisStatus;
-}
-
-MINIPORT_PAUSE  __AdapterPause;
-NDIS_STATUS
-__AdapterPause(
-    IN  NDIS_HANDLE     Handle,
-    IN  PNDIS_MINIPORT_PAUSE_PARAMETERS Params
-    )
-{
-    PXENNET_ADAPTER     Adapter = (PXENNET_ADAPTER)Handle;
-
-    UNREFERENCED_PARAMETER(Params);
-
-    if (AdapterDisable(Adapter))
-        AdapterMediaStateChange(Adapter);
-
-    return NDIS_STATUS_SUCCESS;
-}
-
-MINIPORT_DEVICE_PNP_EVENT_NOTIFY    __AdapterPnPEventHandler;
-VOID
-__AdapterPnPEventHandler(
-    IN  NDIS_HANDLE     Handle,
-    IN  PNET_DEVICE_PNP_EVENT   Event
-    )
-{
-    UNREFERENCED_PARAMETER(Handle);
-    UNREFERENCED_PARAMETER(Event);
-}
-
-MINIPORT_RESET  __AdapterReset;
-NDIS_STATUS
-__AdapterReset(
-    IN  NDIS_HANDLE     Handle,
-    OUT PBOOLEAN        AddressingReset
-    )
-{
-    UNREFERENCED_PARAMETER(Handle);
-
-    *AddressingReset = FALSE;
-    return NDIS_STATUS_SUCCESS;
-}
-
-MINIPORT_RESTART    __AdapterRestart;
-NDIS_STATUS
-__AdapterRestart(
-    IN  NDIS_HANDLE             Handle,
-    IN  PNDIS_MINIPORT_RESTART_PARAMETERS   Params
-    )
-{
-    PXENNET_ADAPTER     Adapter = (PXENNET_ADAPTER)Handle;
-
-    UNREFERENCED_PARAMETER(Params);
-
-    return AdapterEnable(Adapter);
-}
-
-MINIPORT_RETURN_NET_BUFFER_LISTS    __AdapterReturnNetBufferLists;
-VOID
-__AdapterReturnNetBufferLists(
-    IN  NDIS_HANDLE             Handle,
-    IN  PNET_BUFFER_LIST        NetBufferLists,
-    IN  ULONG                   ReturnFlags
-    )
-{
-    PXENNET_ADAPTER     Adapter = (PXENNET_ADAPTER)Handle;
-    PXENNET_RECEIVER    Receiver = AdapterGetReceiver(Adapter);
-
-    ReceiverReturnNetBufferLists(Receiver,
-                                 NetBufferLists,
-                                 ReturnFlags);
-}
-
-MINIPORT_SEND_NET_BUFFER_LISTS  __AdapterSendNetBufferLists;
-VOID
-__AdapterSendNetBufferLists(
-    IN  NDIS_HANDLE             Handle,
-    IN  PNET_BUFFER_LIST        NetBufferList,
-    IN  NDIS_PORT_NUMBER        PortNumber,
-    IN  ULONG                   SendFlags
-    )
-{
-    PXENNET_ADAPTER     Adapter = (PXENNET_ADAPTER)Handle;
-    PXENNET_TRANSMITTER Transmitter = AdapterGetTransmitter(Adapter);
-
-    TransmitterSendNetBufferLists(Transmitter,
-                                  NetBufferList,
-                                  PortNumber,
-                                  SendFlags);
-}
-
-MINIPORT_SHUTDOWN   __AdapterShutdown;
-VOID
-__AdapterShutdown(
-    IN  NDIS_HANDLE             Handle,
-    IN  NDIS_SHUTDOWN_ACTION    Action
-    )
-{
-    PXENNET_ADAPTER Adapter = (PXENNET_ADAPTER)Handle;
-
-    if (Action != NdisShutdownBugCheck)
-        AdapterDisable(Adapter);
-}
 
 typedef struct _XENNET_CONTEXT {
     PDEVICE_CAPABILITIES    Capabilities;
@@ -363,7 +157,6 @@ DispatchFail(
     return STATUS_UNSUCCESSFUL;
 }
 
-MINIPORT_UNLOAD DriverUnload;
 VOID
 DriverUnload(
     IN  PDRIVER_OBJECT  DriverObject
@@ -402,7 +195,6 @@ DriverEntry (
     )
 {
     NDIS_STATUS ndisStatus;
-    NDIS_MINIPORT_DRIVER_CHARACTERISTICS mpChars;
     NDIS_CONFIGURATION_OBJECT ConfigurationObject;
     NDIS_HANDLE ConfigurationHandle;
     NDIS_STRING ParameterName;
@@ -426,41 +218,9 @@ DriverEntry (
          MONTH,
          YEAR);
 
-    //
-    // Register miniport with NDIS.
-    //
-
-    NdisZeroMemory(&mpChars, sizeof(mpChars));
-    mpChars.Header.Type = NDIS_OBJECT_TYPE_MINIPORT_DRIVER_CHARACTERISTICS,
-    mpChars.Header.Size = sizeof(NDIS_MINIPORT_DRIVER_CHARACTERISTICS);
-    mpChars.Header.Revision = NDIS_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_1;
-
-    mpChars.MajorNdisVersion = 6;
-    mpChars.MinorNdisVersion = 0;
-    mpChars.MajorDriverVersion = MAJOR_VERSION;
-    mpChars.MinorDriverVersion = MINOR_VERSION;
-
-    mpChars.CancelOidRequestHandler = __AdapterCancelOidRequest;
-    mpChars.CancelSendHandler = __AdapterCancelSendNetBufferLists;
-    mpChars.CheckForHangHandlerEx = __AdapterCheckForHang;
-    mpChars.InitializeHandlerEx = __AdapterInitialize;
-    mpChars.HaltHandlerEx = __AdapterHalt;
-    mpChars.OidRequestHandler = __AdapterOidRequest;
-    mpChars.PauseHandler = __AdapterPause;
-    mpChars.DevicePnPEventNotifyHandler  = __AdapterPnPEventHandler;
-    mpChars.ResetHandlerEx = __AdapterReset;
-    mpChars.RestartHandler = __AdapterRestart;
-    mpChars.ReturnNetBufferListsHandler = __AdapterReturnNetBufferLists;
-    mpChars.SendNetBufferListsHandler = __AdapterSendNetBufferLists;
-    mpChars.ShutdownHandlerEx = __AdapterShutdown;
-    mpChars.UnloadHandler = DriverUnload;
-
-    Driver.MiniportHandle = NULL;
-    ndisStatus = NdisMRegisterMiniportDriver(DriverObject,
-                                             RegistryPath,
-                                             NULL,
-                                             &mpChars,
-                                             &Driver.MiniportHandle);
+    ndisStatus = MiniportRegister(DriverObject,
+                                  RegistryPath,
+                                  &Driver.MiniportHandle);
     if (ndisStatus != NDIS_STATUS_SUCCESS) {
         Error("Failed (0x%08X) to register miniport.\n", ndisStatus);
         goto fail;

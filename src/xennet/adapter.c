@@ -29,14 +29,18 @@
  * SUCH DAMAGE.
  */
 
+#define INITGUID 1
+
 #include <ndis.h>
 #include <stdlib.h>
+#include <version.h>
+
+#include <vif_interface.h>
+#include <cache_interface.h>
+
 #include "adapter.h"
 #include "transmitter.h"
 #include "receiver.h"
-#include <vif_interface.h>
-#include <cache_interface.h>
-#include <version.h>
 #include "dbg_print.h"
 #include "assert.h"
 

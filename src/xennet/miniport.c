@@ -1,223 +1,358 @@
 /* Copyright (c) Citrix Systems Inc.
  * All rights reserved.
- * 
- * Redistribution and use in source and binary forms, 
- * with or without modification, are permitted provided 
+ *
+ * Redistribution and use in source and binary forms,
+ * with or without modification, are permitted provided
  * that the following conditions are met:
- * 
- * *   Redistributions of source code must retain the above 
- *     copyright notice, this list of conditions and the 
+ *
+ * *   Redistributions of source code must retain the above
+ *     copyright notice, this list of conditions and the
  *     following disclaimer.
- * *   Redistributions in binary form must reproduce the above 
- *     copyright notice, this list of conditions and the 
- *     following disclaimer in the documentation and/or other 
+ * *   Redistributions in binary form must reproduce the above
+ *     copyright notice, this list of conditions and the
+ *     following disclaimer in the documentation and/or other
  *     materials provided with the distribution.
- * 
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND 
- * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, 
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF 
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
- * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR 
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, 
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR 
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING 
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF 
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
 
-#define INITGUID 1
+#include <ndis.h>
+#include <version.h>
 
-#include "common.h"
+#include "driver.h"
+#include "miniport.h"
+#include "adapter.h"
+#include "dbg_print.h"
+#include "assert.h"
 
-#pragma warning( disable : 4098 )
-
-extern NTSTATUS AllocAdapter(PADAPTER *Adapter);
-
-static FORCEINLINE NTSTATUS
-__QueryInterface(
-    IN  PDEVICE_OBJECT  DeviceObject,
-    IN  const GUID      *Guid,
-    IN  ULONG           Version,
-    OUT PINTERFACE      Interface,
-    IN  ULONG           Size,
-    IN  BOOLEAN         Optional
+static
+_Function_class_(MINIPORT_INITIALIZE)
+NDIS_STATUS
+MiniportInitializeEx(
+    IN  NDIS_HANDLE                     NdisMiniportHandle,
+    IN  NDIS_HANDLE                     MiniportDriverContext,
+    IN  PNDIS_MINIPORT_INIT_PARAMETERS  MiniportInitParameters
     )
 {
-    KEVENT              Event;
-    IO_STATUS_BLOCK     StatusBlock;
-    PIRP                Irp;
-    PIO_STACK_LOCATION  StackLocation;
-    NTSTATUS            status;
+    PXENNET_ADAPTER                     Adapter;
+    NDIS_STATUS                         NdisStatus;
 
-    ASSERT3U(KeGetCurrentIrql(), ==, PASSIVE_LEVEL);
-
-    KeInitializeEvent(&Event, NotificationEvent, FALSE);
-    RtlZeroMemory(&StatusBlock, sizeof(IO_STATUS_BLOCK));
-
-    Irp = IoBuildSynchronousFsdRequest(IRP_MJ_PNP,
-                                       DeviceObject,
-                                       NULL,
-                                       0,
-                                       NULL,
-                                       &Event,
-                                       &StatusBlock);
-
-    status = STATUS_UNSUCCESSFUL;
-    if (Irp == NULL)
-        goto fail1;
-
-    StackLocation = IoGetNextIrpStackLocation(Irp);
-    StackLocation->MinorFunction = IRP_MN_QUERY_INTERFACE;
-
-    StackLocation->Parameters.QueryInterface.InterfaceType = Guid;
-    StackLocation->Parameters.QueryInterface.Size = (USHORT)Size;
-    StackLocation->Parameters.QueryInterface.Version = (USHORT)Version;
-    StackLocation->Parameters.QueryInterface.Interface = Interface;
-    
-    Irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
-
-    status = IoCallDriver(DeviceObject, Irp);
-    if (status == STATUS_PENDING) {
-        (VOID) KeWaitForSingleObject(&Event,
-                                     Executive,
-                                     KernelMode,
-                                     FALSE,
-                                     NULL);
-        status = StatusBlock.Status;
-    }
-
-    if (!NT_SUCCESS(status)) {
-        if (status == STATUS_NOT_SUPPORTED && Optional)
-            goto done;
-
-        goto fail2;
-    }
-
-done:
-    return STATUS_SUCCESS;
-
-fail2:
-    Error("fail2\n");
-
-fail1:
-    Error("fail1 (%08x)\n", status);
-
-    return status;
-}
-
-#define QUERY_INTERFACE(                                                                \
-    _DeviceObject,                                                                      \
-    _ProviderName,                                                                      \
-    _InterfaceName,                                                                     \
-    _Version,                                                                           \
-    _Interface,                                                                         \
-    _Size,                                                                              \
-    _Optional)                                                                          \
-    __QueryInterface((_DeviceObject),                                                   \
-                     &GUID_ ## _ProviderName ## _ ## _InterfaceName ## _INTERFACE,      \
-                     (_Version),                                                        \
-                     (_Interface),                                                      \
-                     (_Size),                                                           \
-                     (_Optional))
-
-NDIS_STATUS 
-MiniportInitialize (
-    IN  NDIS_HANDLE                        MiniportAdapterHandle,
-    IN  NDIS_HANDLE                        MiniportDriverContext,
-    IN  PNDIS_MINIPORT_INIT_PARAMETERS     MiniportInitParameters
-    )
-{
-    PADAPTER Adapter = NULL;
-    NDIS_STATUS ndisStatus;
-    PDEVICE_OBJECT DeviceObject;
-    NTSTATUS status;
+    Trace("====>\n");
 
     UNREFERENCED_PARAMETER(MiniportDriverContext);
     UNREFERENCED_PARAMETER(MiniportInitParameters);
 
-    Trace("====>\n");
-
-    status = AllocAdapter(&Adapter);
-
-    if (!NT_SUCCESS(status) || Adapter == NULL) {
-        ndisStatus = NDIS_STATUS_RESOURCES;
+    NdisStatus = AdapterInitialize(NdisMiniportHandle, &Adapter);
+    if (NdisStatus != NDIS_STATUS_SUCCESS)
         goto fail1;
-    }
-
-    RtlZeroMemory(Adapter, sizeof (ADAPTER));
-
-    DeviceObject = NULL;
-    NdisMGetDeviceProperty(MiniportAdapterHandle,
-                           &DeviceObject,
-                           NULL,
-                           NULL,
-                           NULL,
-                           NULL);
-
-    status = QUERY_INTERFACE(DeviceObject,
-                             XENVIF,
-                             VIF,
-                             XENVIF_VIF_INTERFACE_VERSION_MAX,
-                             (PINTERFACE)&Adapter->VifInterface,
-                             sizeof (Adapter->VifInterface),
-                             FALSE);
-
-    if (!NT_SUCCESS(status)) {
-        ndisStatus = NDIS_STATUS_ADAPTER_NOT_FOUND;
-        goto fail2;
-    }
-
-    ndisStatus = AdapterInitialize(Adapter, MiniportAdapterHandle);
-    if (ndisStatus != NDIS_STATUS_SUCCESS) {
-        goto fail3;
-    }
 
     Trace("<====\n");
-    return ndisStatus;
 
-fail3:
-    Error("fail3\n");
-
-    RtlZeroMemory(&Adapter->VifInterface,
-                  sizeof (XENVIF_VIF_INTERFACE));
-
-fail2:
-    Error("fail2\n");
-
-    ExFreePool(Adapter);
+    return NDIS_STATUS_SUCCESS;
 
 fail1:
-    Error("fail1\n");
+    Error("fail1 (%08x)\n", NdisStatus);
 
-    return ndisStatus;
+    return NdisStatus;
 }
 
-//
-// Stops adapter and frees all resources.
-//
-VOID 
-MiniportHalt (
-    IN  NDIS_HANDLE             MiniportAdapterHandle,
-    IN  NDIS_HALT_ACTION        HaltAction
+static
+_Function_class_(MINIPORT_HALT)
+VOID
+MiniportHaltEx(
+    IN  NDIS_HANDLE         MiniportAdapterContext,
+    IN  NDIS_HALT_ACTION    HaltAction
     )
 {
-    PADAPTER Adapter = (PADAPTER)MiniportAdapterHandle;
+    PXENNET_ADAPTER         Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
 
     UNREFERENCED_PARAMETER(HaltAction);
+
+    Trace("====>\n");
 
     if (Adapter == NULL)
         return;
 
-    (VOID) AdapterStop(Adapter);
+    (VOID) AdapterDisable(Adapter);
 
-    AdapterCleanup(Adapter);
+    AdapterTeardown(Adapter);
 
-    RtlZeroMemory(&Adapter->VifInterface,
-                  sizeof (XENVIF_VIF_INTERFACE));
+    Trace("<====\n");
+}
 
-    ExFreePool(Adapter);
+static
+_Function_class_(MINIPORT_UNLOAD)
+VOID
+MiniportDriverUnload(
+    IN  PDRIVER_OBJECT  DriverObject
+    )
+{
+    DriverUnload(DriverObject);
+}
+
+static
+_Function_class_(MINIPORT_PAUSE)
+NDIS_STATUS
+MiniportPause(
+    IN  NDIS_HANDLE                     MiniportAdapterContext,
+    IN  PNDIS_MINIPORT_PAUSE_PARAMETERS MiniportPauseParameters
+    )
+{
+    PXENNET_ADAPTER                     Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
+
+    UNREFERENCED_PARAMETER(MiniportPauseParameters);
+
+    Trace("====>\n");
+
+    if (AdapterDisable(Adapter))
+        AdapterMediaStateChange(Adapter);
+
+    Trace("<====\n");
+
+    return NDIS_STATUS_SUCCESS;
+}
+
+static
+_Function_class_(MINIORT_RESTART)
+NDIS_STATUS
+MiniportRestart(
+    IN  NDIS_HANDLE                         MiniportAdapterContext,
+    IN  PNDIS_MINIPORT_RESTART_PARAMETERS   MiniportRestartParameters
+    )
+{
+    PXENNET_ADAPTER                         Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
+    NDIS_STATUS                             NdisStatus;
+
+    UNREFERENCED_PARAMETER(MiniportRestartParameters);
+
+    Trace("====>\n");
+
+    NdisStatus = AdapterEnable(Adapter);
+
+    Trace("<====\n");
+
+    return NdisStatus;
+}
+
+static
+_Function_class_(MINIPORT_OID_REQUEST)
+NDIS_STATUS
+MiniportOidRequest(
+    IN  NDIS_HANDLE         MiniportAdapterContext,
+    IN  PNDIS_OID_REQUEST   OidRequest
+    )
+{
+    PXENNET_ADAPTER         Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
+    NDIS_STATUS             NdisStatus;
+
+    switch (OidRequest->RequestType) {
+        case NdisRequestSetInformation:
+            NdisStatus = AdapterSetInformation(Adapter, OidRequest);
+            break;
+
+        case NdisRequestQueryInformation:
+        case NdisRequestQueryStatistics:
+            NdisStatus = AdapterQueryInformation(Adapter, OidRequest);
+            break;
+
+        default:
+            NdisStatus = NDIS_STATUS_NOT_SUPPORTED;
+            break;
+    };
+
+    return NdisStatus;
+}
+
+static
+_Function_class_(MINIPORT_SEND_NET_BUFFER_LISTS)
+VOID
+MiniportSendNetBufferLists(
+    IN  NDIS_HANDLE         MiniportAdapterContext,
+    IN  PNET_BUFFER_LIST    NetBufferList,
+    IN  NDIS_PORT_NUMBER    PortNumber,
+    IN  ULONG               SendFlags
+    )
+{
+    PXENNET_ADAPTER         Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
+    PXENNET_TRANSMITTER     Transmitter = AdapterGetTransmitter(Adapter);
+
+    TransmitterSendNetBufferLists(Transmitter,
+                                  NetBufferList,
+                                  PortNumber,
+                                  SendFlags);
+}
+
+static
+_Function_class_(MINIPORT_RETURN_NET_BUFFER_LISTS)
+VOID
+MiniportReturnNetBufferLists(
+    IN  NDIS_HANDLE         MiniportAdapterContext,
+    IN  PNET_BUFFER_LIST    NetBufferLists,
+    IN  ULONG               ReturnFlags
+    )
+{
+    PXENNET_ADAPTER         Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
+    PXENNET_RECEIVER        Receiver = AdapterGetReceiver(Adapter);
+
+    ReceiverReturnNetBufferLists(Receiver,
+                                 NetBufferLists,
+                                 ReturnFlags);
+}
+
+static
+_Function_class_(MINIPORT_CANCEL_SEND)
+VOID
+MiniportCancelSend(
+    IN  NDIS_HANDLE MiniportAdapterContext,
+    IN  PVOID       CancelId
+    )
+{
+    UNREFERENCED_PARAMETER(MiniportAdapterContext);
+    UNREFERENCED_PARAMETER(CancelId);
+}
+
+static
+_Function_class_(MINIPORT_CHECK_FOR_HANG)
+BOOLEAN
+MiniportCheckForHangEx(
+    IN  NDIS_HANDLE MiniportAdapterContext
+    )
+{
+    UNREFERENCED_PARAMETER(MiniportAdapterContext);
+
+    return FALSE;
+}
+
+static
+_Function_class_(MINIPORT_RESET)
+NDIS_STATUS
+MiniportResetEx(
+    IN  NDIS_HANDLE MiniportAdapterContext,
+    OUT PBOOLEAN    AddressingReset
+    )
+{
+    UNREFERENCED_PARAMETER(MiniportAdapterContext);
+
+    Trace("<===>\n");
+
+    *AddressingReset = FALSE;
+
+    return NDIS_STATUS_SUCCESS;
+}
+
+static
+_Function_class_(MINIPORT_DEVICE_PNP_EVENT_NOTIFY)
+VOID
+MiniportDevicePnPEventNotify(
+    IN  NDIS_HANDLE             MiniportAdapterContext,
+    IN  PNET_DEVICE_PNP_EVENT   NetDevicePnPEvent
+    )
+{
+    UNREFERENCED_PARAMETER(MiniportAdapterContext);
+    UNREFERENCED_PARAMETER(NetDevicePnPEvent);
+
+    Trace("<===>\n");
+}
+
+static
+_Function_class_(MINIPORT_SHUTDOWN)
+VOID
+MiniportShutdownEx(
+    IN  NDIS_HANDLE             MiniportAdapterContext,
+    IN  NDIS_SHUTDOWN_ACTION    ShutdownAction
+    )
+{
+    PXENNET_ADAPTER             Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
+
+    if (ShutdownAction == NdisShutdownBugCheck)
+        return;
+
+    Trace("====>\n");
+
+    AdapterDisable(Adapter);
+
+    Trace("<====\n");
+}
+
+static
+_Function_class_(MINIPORT_CANCEL_OID_REQUEST)
+VOID
+MiniportCancelOidRequest(
+    IN  NDIS_HANDLE MiniportAdapterContext,
+    IN  PVOID       RequestId
+    )
+{
+    UNREFERENCED_PARAMETER(MiniportAdapterContext);
+    UNREFERENCED_PARAMETER(RequestId);
+
+    Trace("<===>\n");
+}
+
+NDIS_STATUS
+MiniportRegister(
+    IN  PDRIVER_OBJECT                      DriverObject,
+    IN  PUNICODE_STRING                     RegistryPath,
+    OUT PNDIS_HANDLE                        NdisMiniportDriverHandle
+    )
+{
+    NDIS_STATUS                             NdisStatus;
+    NDIS_MINIPORT_DRIVER_CHARACTERISTICS    MiniportDriverCharacteristics;
+
+    Trace("====>\n");
+
+    NdisZeroMemory(&MiniportDriverCharacteristics, sizeof (MiniportDriverCharacteristics));
+
+    MiniportDriverCharacteristics.Header.Type = NDIS_OBJECT_TYPE_MINIPORT_DRIVER_CHARACTERISTICS,
+    MiniportDriverCharacteristics.Header.Size = NDIS_SIZEOF_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_1;
+    MiniportDriverCharacteristics.Header.Revision = NDIS_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_1;
+
+    MiniportDriverCharacteristics.MajorNdisVersion = 6;
+    MiniportDriverCharacteristics.MinorNdisVersion = 0;
+    MiniportDriverCharacteristics.MajorDriverVersion = MAJOR_VERSION;
+    MiniportDriverCharacteristics.MinorDriverVersion = MINOR_VERSION;
+
+    MiniportDriverCharacteristics.CancelOidRequestHandler = MiniportCancelOidRequest;
+    MiniportDriverCharacteristics.CancelSendHandler = MiniportCancelSend;
+    MiniportDriverCharacteristics.CheckForHangHandlerEx = MiniportCheckForHangEx;
+    MiniportDriverCharacteristics.InitializeHandlerEx = MiniportInitializeEx;
+    MiniportDriverCharacteristics.HaltHandlerEx = MiniportHaltEx;
+    MiniportDriverCharacteristics.OidRequestHandler = MiniportOidRequest;
+    MiniportDriverCharacteristics.PauseHandler = MiniportPause;
+    MiniportDriverCharacteristics.DevicePnPEventNotifyHandler  = MiniportDevicePnPEventNotify;
+    MiniportDriverCharacteristics.ResetHandlerEx = MiniportResetEx;
+    MiniportDriverCharacteristics.RestartHandler = MiniportRestart;
+    MiniportDriverCharacteristics.ReturnNetBufferListsHandler = MiniportReturnNetBufferLists;
+    MiniportDriverCharacteristics.SendNetBufferListsHandler = MiniportSendNetBufferLists;
+    MiniportDriverCharacteristics.ShutdownHandlerEx = MiniportShutdownEx;
+    MiniportDriverCharacteristics.UnloadHandler = MiniportDriverUnload;
+
+    NdisStatus = NdisMRegisterMiniportDriver(DriverObject,
+                                             RegistryPath,
+                                             NULL,
+                                             &MiniportDriverCharacteristics,
+                                             NdisMiniportDriverHandle);
+    if (NdisStatus != NDIS_STATUS_SUCCESS)
+        goto fail1;
+
+    Trace("<====\n");
+
+    return NDIS_STATUS_SUCCESS;
+
+fail1:
+    Error("fail1 (%08x)\n", NdisStatus);
+
+    return NdisStatus;
 }

@@ -85,6 +85,7 @@
 	<ItemGroup>
 		<ClCompile Include="../../src/xennet/adapter.c" />
 		<ClCompile Include="../../src/xennet/driver.c" />
+		<ClCompile Include="../../src/xennet/miniport.c" />
 		<ClCompile Include="../../src/xennet/receiver.c" />
 		<ClCompile Include="../../src/xennet/transmitter.c" />
 	</ItemGroup>
