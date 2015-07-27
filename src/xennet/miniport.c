@@ -323,6 +323,7 @@ MiniportRegister(
     MiniportDriverCharacteristics.MinorNdisVersion = 0;
     MiniportDriverCharacteristics.MajorDriverVersion = MAJOR_VERSION;
     MiniportDriverCharacteristics.MinorDriverVersion = MINOR_VERSION;
+    MiniportDriverCharacteristics.Flags = NDIS_WDM_DRIVER;
 
     MiniportDriverCharacteristics.CancelOidRequestHandler = MiniportCancelOidRequest;
     MiniportDriverCharacteristics.CancelSendHandler = MiniportCancelSend;
