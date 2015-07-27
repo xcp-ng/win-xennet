@@ -39,6 +39,22 @@
 #include "assert.h"
 
 static
+_Function_class_(SET_OPTIONS)
+NDIS_STATUS
+MiniportSetOptions(
+    IN  NDIS_HANDLE NdisDriverHandle,
+    IN  NDIS_HANDLE DriverContext
+    )
+{
+    UNREFERENCED_PARAMETER(NdisDriverHandle);
+    UNREFERENCED_PARAMETER(DriverContext);
+
+    Trace("<===>\n");
+
+    return NDIS_STATUS_SUCCESS;
+}
+
+static
 _Function_class_(MINIPORT_INITIALIZE)
 NDIS_STATUS
 MiniportInitializeEx(
@@ -301,6 +317,32 @@ MiniportCancelOidRequest(
     Trace("<===>\n");
 }
 
+static
+_Function_class_(MINIPORT_DIRECT_OID_REQUEST)
+NDIS_STATUS
+MiniportDirectOidRequest(
+    IN  NDIS_HANDLE         MiniportAdapterContext,
+    IN  PNDIS_OID_REQUEST   OidRequest
+    )
+{
+    UNREFERENCED_PARAMETER(MiniportAdapterContext);
+    UNREFERENCED_PARAMETER(OidRequest);
+
+    return NDIS_STATUS_INVALID_OID;
+}
+
+static
+_Function_class_(MINIPORT_CANCEL_DIRECT_OID_REQUEST)
+VOID
+MiniportCancelDirectOidRequest(
+    IN  NDIS_HANDLE MiniportAdapterContext,
+    IN  PVOID       RequestId
+    )
+{
+    UNREFERENCED_PARAMETER(MiniportAdapterContext);
+    UNREFERENCED_PARAMETER(RequestId);
+}
+
 NDIS_STATUS
 MiniportRegister(
     IN  PDRIVER_OBJECT                      DriverObject,
@@ -316,11 +358,11 @@ MiniportRegister(
     NdisZeroMemory(&MiniportDriverCharacteristics, sizeof (MiniportDriverCharacteristics));
 
     MiniportDriverCharacteristics.Header.Type = NDIS_OBJECT_TYPE_MINIPORT_DRIVER_CHARACTERISTICS,
-    MiniportDriverCharacteristics.Header.Size = NDIS_SIZEOF_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_1;
-    MiniportDriverCharacteristics.Header.Revision = NDIS_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_1;
+    MiniportDriverCharacteristics.Header.Size = NDIS_SIZEOF_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_2;
+    MiniportDriverCharacteristics.Header.Revision = NDIS_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_2;
 
-    MiniportDriverCharacteristics.MajorNdisVersion = 6;
-    MiniportDriverCharacteristics.MinorNdisVersion = 0;
+    MiniportDriverCharacteristics.MajorNdisVersion = NDIS_MINIPORT_MAJOR_VERSION;
+    MiniportDriverCharacteristics.MinorNdisVersion = NDIS_MINIPORT_MINOR_VERSION;
     MiniportDriverCharacteristics.MajorDriverVersion = MAJOR_VERSION;
     MiniportDriverCharacteristics.MinorDriverVersion = MINOR_VERSION;
     MiniportDriverCharacteristics.Flags = NDIS_WDM_DRIVER;
@@ -339,6 +381,8 @@ MiniportRegister(
     MiniportDriverCharacteristics.SendNetBufferListsHandler = MiniportSendNetBufferLists;
     MiniportDriverCharacteristics.ShutdownHandlerEx = MiniportShutdownEx;
     MiniportDriverCharacteristics.UnloadHandler = MiniportDriverUnload;
+    MiniportDriverCharacteristics.DirectOidRequestHandler = MiniportDirectOidRequest;
+    MiniportDriverCharacteristics.CancelDirectOidRequestHandler = MiniportCancelDirectOidRequest;
 
     NdisStatus = NdisMRegisterMiniportDriver(DriverObject,
                                              RegistryPath,
