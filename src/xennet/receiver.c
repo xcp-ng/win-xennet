@@ -29,9 +29,12 @@
  * SUCH DAMAGE.
  */
 
+#include <ndis.h>
+#include <util.h>
+#include <tcpip.h>
+
 #include "receiver.h"
 #include "adapter.h"
-#include <util.h>
 #include "dbg_print.h"
 #include "assert.h"
 
@@ -44,6 +47,7 @@ struct _XENNET_RECEIVER {
     LONG                        InNDIS;
     LONG                        InNDISMax;
     XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
+    ULONG                       MaxHeaderSize;
 };
 
 #define RECEIVER_POOL_TAG       'RteN'
@@ -166,15 +170,16 @@ __ReceiverReturnNetBufferLists(
 
 static PNET_BUFFER_LIST
 __ReceiverReceivePacket(
-    IN  PXENNET_RECEIVER                Receiver,
-    IN  PMDL                            Mdl,
-    IN  ULONG                           Offset,
-    IN  ULONG                           Length,
-    IN  XENVIF_PACKET_CHECKSUM_FLAGS    Flags,
-    IN  USHORT                          TagControlInformation
+    IN  PXENNET_RECEIVER                        Receiver,
+    IN  PMDL                                    Mdl,
+    IN  ULONG                                   Offset,
+    IN  ULONG                                   Length,
+    IN  XENVIF_PACKET_CHECKSUM_FLAGS            Flags,
+    IN  PXENVIF_PACKET_INFO                     Info
     )
 {
     PNET_BUFFER_LIST                            NetBufferList;
+    PNET_BUFFER                                 NetBuffer;
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO   csumInfo;
 
     NetBufferList = __ReceiverAllocateNetBufferList(Receiver,
@@ -183,6 +188,8 @@ __ReceiverReceivePacket(
                                                     Length);
     if (NetBufferList == NULL)
         goto fail1;
+
+    NetBuffer = NET_BUFFER_LIST_FIRST_NB(NetBufferList);
 
     NetBufferList->SourceHandle = AdapterGetHandle(Receiver->Adapter);
 
@@ -199,10 +206,10 @@ __ReceiverReceivePacket(
 
     NET_BUFFER_LIST_INFO(NetBufferList, TcpIpChecksumNetBufferListInfo) = (PVOID)(ULONG_PTR)csumInfo.Value;
 
-    if (TagControlInformation != 0) {
+    if (Info->TagControlInformation != 0) {
         NDIS_NET_BUFFER_LIST_8021Q_INFO Ieee8021QInfo;
 
-        UNPACK_TAG_CONTROL_INFORMATION(TagControlInformation,
+        UNPACK_TAG_CONTROL_INFORMATION(Info->TagControlInformation,
                                        Ieee8021QInfo.TagHeader.UserPriority,
                                        Ieee8021QInfo.TagHeader.CanonicalFormatId,
                                        Ieee8021QInfo.TagHeader.VlanId);
@@ -211,6 +218,48 @@ __ReceiverReceivePacket(
             goto fail2;
 
         NET_BUFFER_LIST_INFO(NetBufferList, Ieee8021QNetBufferListInfo) = Ieee8021QInfo.Value;
+    }
+
+    if (Info->IpHeader.Offset != 0) {
+        ULONG                   NblFlags;
+        PUCHAR                  InfoVa;
+        PIP_HEADER              IpHeader;
+        NDIS_PHYSICAL_ADDRESS   DataPhysicalAddress;
+
+        NblFlags = NET_BUFFER_LIST_NBL_FLAGS(NetBufferList);
+
+        InfoVa = MmGetSystemAddressForMdlSafe(Mdl, NormalPagePriority);
+        ASSERT(InfoVa != NULL);
+        InfoVa += Offset;
+
+        IpHeader = (PIP_HEADER)(InfoVa + Info->IpHeader.Offset);
+
+        if (IpHeader->Version == 4) {
+            NblFlags |= NDIS_NBL_FLAGS_IS_IPV4;
+        } else {
+            ASSERT3U(IpHeader->Version, ==, 6);
+            NblFlags |= NDIS_NBL_FLAGS_IS_IPV6;
+        }
+
+        if (Info->TcpHeader.Offset != 0)
+            NblFlags |= NDIS_NBL_FLAGS_IS_TCP;
+        else if (Info->UdpHeader.Offset != 0)
+            NblFlags |= NDIS_NBL_FLAGS_IS_UDP;
+
+        if (Mdl->Next != NULL && Info->Length < Receiver->MaxHeaderSize) {
+            NblFlags |= NDIS_NBL_FLAGS_HD_SPLIT;
+            if (NblFlags & (NDIS_NBL_FLAGS_IS_TCP | NDIS_NBL_FLAGS_IS_UDP))
+                NblFlags |= NDIS_NBL_FLAGS_SPLIT_AT_UPPER_LAYER_PROTOCOL_PAYLOAD;
+            else
+                NblFlags |= NDIS_NBL_FLAGS_SPLIT_AT_UPPER_LAYER_PROTOCOL_HEADER;
+
+            DataPhysicalAddress.QuadPart = (ULONGLONG)MmGetMdlPfnArray(Mdl->Next)[0] << PAGE_SHIFT;
+            DataPhysicalAddress.QuadPart += Mdl->Next->ByteOffset;
+
+            NET_BUFFER_DATA_PHYSICAL_ADDRESS(NetBuffer) = DataPhysicalAddress;
+        }
+
+        NET_BUFFER_LIST_NBL_FLAGS(NetBufferList) = NblFlags;
     }
 
     return NetBufferList;
@@ -394,7 +443,6 @@ again:
         ULONG                           Offset;
         ULONG                           Length;
         XENVIF_PACKET_CHECKSUM_FLAGS    Flags;
-        USHORT                          TagControlInformation;
         PNET_BUFFER_LIST                NetBufferList;
 
         if (!LowResources &&
@@ -411,12 +459,9 @@ again:
         Offset = Packet->Offset;
         Length = Packet->Length;
         Flags = Packet->Flags;
-
         Info = Packet->Info;
 
-        TagControlInformation = Info->TagControlInformation;
-
-        NetBufferList = __ReceiverReceivePacket(Receiver, Mdl, Offset, Length, Flags, TagControlInformation);
+        NetBufferList = __ReceiverReceivePacket(Receiver, Mdl, Offset, Length, Flags, Info);
 
         if (NetBufferList != NULL) {
             *TailNetBufferList = NetBufferList;
@@ -453,4 +498,13 @@ ReceiverOffloadOptions(
     )
 {
     return &Receiver->OffloadOptions;
+}
+
+VOID
+ReceiverSplitHeaderData(
+    IN  PXENNET_RECEIVER    Receiver,
+    IN  ULONG               MaxHeaderSize
+    )
+{
+    Receiver->MaxHeaderSize = MaxHeaderSize;
 }

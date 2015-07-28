@@ -52,19 +52,6 @@
                                          NDIS_PACKET_TYPE_BROADCAST |       \
                                          NDIS_PACKET_TYPE_PROMISCUOUS)
 
-typedef struct _PROPERTIES {
-    int ipv4_csum;
-    int tcpv4_csum;
-    int udpv4_csum;
-    int tcpv6_csum;
-    int udpv6_csum;
-    int need_csum_value;
-    int lsov4;
-    int lsov6;
-    int lrov4;
-    int lrov6;
-} PROPERTIES, *PPROPERTIES;
-
 typedef struct _XENNET_ADAPTER XENNET_ADAPTER, *PXENNET_ADAPTER;
 
 extern NDIS_STATUS

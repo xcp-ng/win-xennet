@@ -564,6 +564,19 @@ typedef VOID
     IN  XENVIF_VIF_OFFLOAD_OPTIONS  Options
     );
 
+/*! \typedef XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE
+    \brief Set the required receive backfill size (free space before
+    packet payload).
+
+    \param Interface The interface header
+    \param Size The required size
+*/
+typedef VOID
+(*XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE)(
+    IN  PINTERFACE  Interface,
+    IN  ULONG       Size
+    );
+
 /*! \typedef XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE
     \brief Query the maximum size of packet containing a TCP large segment
     that can be handled by the transmit side
@@ -760,7 +773,6 @@ struct _XENVIF_VIF_INTERFACE_V1 {
     XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
 };
 
-
 /*! \struct _XENVIF_VIF_INTERFACE_V2
     \brief VIF interface version 2
     \ingroup interfaces
@@ -790,7 +802,37 @@ struct _XENVIF_VIF_INTERFACE_V2 {
     XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
 };
 
-typedef struct _XENVIF_VIF_INTERFACE_V2 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTERFACE;
+/*! \struct _XENVIF_VIF_INTERFACE_V3
+    \brief VIF interface version 3
+    \ingroup interfaces
+*/
+struct _XENVIF_VIF_INTERFACE_V3 {
+    INTERFACE                                       Interface;
+    XENVIF_VIF_ACQUIRE                              Acquire;
+    XENVIF_VIF_RELEASE                              Release;
+    XENVIF_VIF_ENABLE                               Enable;
+    XENVIF_VIF_DISABLE                              Disable;
+    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
+    XENVIF_VIF_RECEIVER_RETURN_PACKETS              ReceiverReturnPackets;
+    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
+    XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE           ReceiverSetBackfillSize;
+    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
+    XENVIF_VIF_TRANSMITTER_GET_PACKET_HEADERS       TransmitterGetPacketHeaders;
+    XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS_V2         TransmitterQueuePackets;
+    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
+    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
+    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
+    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
+    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
+    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
+    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
+    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
+    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
+    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
+    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
+};
+
+typedef struct _XENVIF_VIF_INTERFACE_V3 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTERFACE;
 
 /*! \def XENVIF_VIF
     \brief Macro at assist in method invocation
@@ -801,6 +843,6 @@ typedef struct _XENVIF_VIF_INTERFACE_V2 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTER
 #endif  // _WINDLL
 
 #define XENVIF_VIF_INTERFACE_VERSION_MIN    1
-#define XENVIF_VIF_INTERFACE_VERSION_MAX    2
+#define XENVIF_VIF_INTERFACE_VERSION_MAX    3
 
 #endif  // _XENVIF_INTERFACE_H

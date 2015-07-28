@@ -66,4 +66,10 @@ ReceiverOffloadOptions(
     IN  PXENNET_RECEIVER    Receiver
     );
 
+extern VOID
+ReceiverSplitHeaderData(
+    IN  PXENNET_RECEIVER    Receiver,
+    IN  ULONG               MaxHeaderSize
+    );
+
 #endif // _XENNET_RECEIVER_H_
