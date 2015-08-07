@@ -126,7 +126,7 @@ MiniportPause(
 }
 
 static
-_Function_class_(MINIORT_RESTART)
+_Function_class_(MINIPORT_RESTART)
 NDIS_STATUS
 MiniportRestart(
     IN  NDIS_HANDLE                         MiniportAdapterContext,
