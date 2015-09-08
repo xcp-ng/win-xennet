@@ -59,20 +59,10 @@
     <IncludePath>..\..\include;$(IncludePath)</IncludePath>
     <RunCodeAnalysis>true</RunCodeAnalysis>
     <EnableInf2cat>false</EnableInf2cat>
-    <CustomBuildBeforeTargets>ClCompile;StampInf</CustomBuildBeforeTargets>
     <IntDir>..\$(ProjectName)\$(ConfigurationName)\$(Platform)\</IntDir>
     <OutDir>..\$(ConfigurationName)\$(Platform)\</OutDir>
   </PropertyGroup>
   <ItemDefinitionGroup>
-    <CustomBuildStep>
-      <Command>echo "Build Inf"
-                powershell -Command "(Get-Content ..\..\src\xennet.inf) -replace '@MAJOR_VERSION@', '$(MAJOR_VERSION)' -replace '@MINOR_VERSION@', '$(MINOR_VERSION)' -replace '@MICRO_VERSION@','$(MICRO_VERSION)' -replace '@BUILD_NUMBER@','$(BUILD_NUMBER)' -replace '@COMPANY_NAME@','$(COMPANY_NAME)' -replace '@PRODUCT_NAME@','$(PRODUCT_NAME)' | Set-Content ..\xennet.inf"
-                echo "Build version header"
-                powershell -Command "(Get-Content ..\..\include\version.hx) -replace '@MAJOR_VERSION@', '$(MAJOR_VERSION)' -replace '@MINOR_VERSION@', '$(MINOR_VERSION)' -replace '@MICRO_VERSION@','$(MICRO_VERSION)' -replace '@BUILD_NUMBER@','$(BUILD_NUMBER)' -replace '@COMPANY_NAME@','$(COMPANY_NAME)' -replace '@PRODUCT_NAME@','$(PRODUCT_NAME)' -replace '@DAY@',%24(Get-Date -format %25%25d) -replace '@MONTH@',%24(Get-Date -format %25%25M) -replace '@YEAR@',%24(Get-Date -format yyyy) | Set-Content ..\..\include\version.h"
-            </Command>
-      <Outputs>..\xennet.inf;..\..\include\version.h</Outputs>
-      <Inputs>..\..\src\xennet.inf;..\..\include\version.hx</Inputs>
-    </CustomBuildStep>
     <ClCompile>
       <PreprocessorDefinitions>__MODULE__="XENNET";NDIS_MINIPORT_DRIVER;NDIS_WDM=1;NDIS60_MINIPORT=1;POOL_NX_OPTIN=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <WarningLevel>EnableAllWarnings</WarningLevel>

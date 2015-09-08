@@ -32,7 +32,7 @@
 Signature="$Windows NT$" 
 Class=Net
 ClassGUID={4d36e972-e325-11ce-bfc1-08002be10318}
-Provider=%Company% 
+Provider=%Vendor% 
 CatalogFile=xennet.cat
 DriverVer=01/01/1900,0.0.0.0
 BootCritical=1
@@ -55,15 +55,15 @@ xennet.sys
 xennet_coinst_@MAJOR_VERSION@_@MINOR_VERSION@_@MICRO_VERSION@_@BUILD_NUMBER@.dll,xennet_coinst.dll
 
 [Manufacturer] 
-%Company%=Inst,NT$ARCH$
+%Vendor%=Inst,NT$ARCH$
 
 [Inst.NT$ARCH$]
 ; DisplayName		Section		DeviceID
 ; -----------		-------		--------
 
-%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_XSC000&DEV_NET&REV_08000002
-%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_XS0001&DEV_NET&REV_08000002
-%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_XS0002&DEV_NET&REV_08000002
+%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@@VENDOR_DEVICE_ID@&DEV_NET&REV_08000002
+%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@0001&DEV_NET&REV_08000002
+%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@0002&DEV_NET&REV_08000002
 
 [XenNet_Inst] 
 Characteristics=0x84
@@ -189,7 +189,7 @@ HKR,,CoInstallers32,0x00010000,"xennet_coinst_@MAJOR_VERSION@_@MINOR_VERSION@_@M
 
 [Strings] 
 
-Company="@COMPANY_NAME@"
+Vendor="@VENDOR_NAME@"
 DiskDesc="@PRODUCT_NAME@ PV Network Device Package" 
 XenNetDesc="@PRODUCT_NAME@ PV Network Device"
 IPChecksumOffloadIPv4="IPv4 Checksum Offload"
