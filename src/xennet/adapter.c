@@ -1364,10 +1364,10 @@ AdapterQueryInformation(
         break;
 
     case OID_GEN_VENDOR_DESCRIPTION:
-        BytesNeeded = (ULONG)strlen(COMPANY_NAME_STR) + 1;
+        BytesNeeded = (ULONG)strlen(VENDOR_NAME_STR) + 1;
         ndisStatus = __CopyBuffer(Buffer,
                                   BufferLength,
-                                  COMPANY_NAME_STR,
+                                  VENDOR_NAME_STR,
                                   BytesNeeded,
                                   &BytesWritten);
         break;
