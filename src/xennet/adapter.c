@@ -32,17 +32,23 @@
 #define INITGUID 1
 
 #include <ndis.h>
+#include <ntstrsafe.h>
 #include <stdlib.h>
 #include <version.h>
 
 #include <vif_interface.h>
 #include <cache_interface.h>
+#include <store_interface.h>
+#include <suspend_interface.h>
 
 #include "adapter.h"
 #include "transmitter.h"
 #include "receiver.h"
+#include "util.h"
 #include "dbg_print.h"
 #include "assert.h"
+
+#define MAXNAMELEN  128
 
 typedef struct _PROPERTIES {
     int ipv4_csum;
@@ -59,22 +65,28 @@ typedef struct _PROPERTIES {
 } PROPERTIES, *PPROPERTIES;
 
 struct _XENNET_ADAPTER {
-    XENVIF_VIF_INTERFACE    VifInterface;
-    XENBUS_CACHE_INTERFACE  CacheInterface;
+    XENVIF_VIF_INTERFACE        VifInterface;
+    XENBUS_CACHE_INTERFACE      CacheInterface;
+    XENBUS_STORE_INTERFACE      StoreInterface;
+    XENBUS_SUSPEND_INTERFACE    SuspendInterface;
 
-    ULONG                   MaximumFrameSize;
-    ULONG                   CurrentLookahead;
+    PXENBUS_SUSPEND_CALLBACK    SuspendCallbackLate;
 
-    NDIS_HANDLE             NdisAdapterHandle;
-    NDIS_HANDLE             NdisDmaHandle;
-    NDIS_PNP_CAPABILITIES   Capabilities;
-    NDIS_OFFLOAD            Offload;
-    PROPERTIES              Properties;
+    ULONG                       MaximumFrameSize;
+    ULONG                       CurrentLookahead;
 
-    PXENNET_RECEIVER        Receiver;
-    PXENNET_TRANSMITTER     Transmitter;
-    BOOLEAN                 Enabled;
+    NDIS_HANDLE                 NdisAdapterHandle;
+    NDIS_HANDLE                 NdisDmaHandle;
+    NDIS_PNP_CAPABILITIES       Capabilities;
+    NDIS_OFFLOAD                Offload;
+    PROPERTIES                  Properties;
+
+    PXENNET_RECEIVER            Receiver;
+    PXENNET_TRANSMITTER         Transmitter;
+    BOOLEAN                     Enabled;
 };
+
+static LONG AdapterCount;
 
 static NDIS_OID XennetSupportedOids[] =
 {
@@ -2245,6 +2257,396 @@ fail1:
     return NdisStatus;
 }
 
+static FORCEINLINE PVOID
+__AdapterAllocate(
+    IN  ULONG   Length
+    )
+{
+    return __AllocateNonPagedPoolWithTag(Length, ADAPTER_POOL_TAG);
+}
+
+static FORCEINLINE VOID
+__AdapterFree(
+    IN  PVOID   Buffer
+    )
+{
+    __FreePoolWithTag(Buffer, ADAPTER_POOL_TAG);
+}
+
+static FORCEINLINE PANSI_STRING
+__AdapterMultiSzToUpcaseAnsi(
+    IN  PCHAR       Buffer
+    )
+{
+    PANSI_STRING    Ansi;
+    LONG            Index;
+    LONG            Count;
+    NTSTATUS        status;
+
+    Index = 0;
+    Count = 0;
+    for (;;) {
+        if (Buffer[Index] == '\0') {
+            Count++;
+            Index++;
+
+            // Check for double NUL
+            if (Buffer[Index] == '\0')
+                break;
+        } else {
+            Buffer[Index] = (CHAR)toupper(Buffer[Index]);
+            Index++;
+        }
+    }
+
+    Ansi = __AdapterAllocate(sizeof (ANSI_STRING) * (Count + 1));
+
+    status = STATUS_NO_MEMORY;
+    if (Ansi == NULL)
+        goto fail1;
+
+    for (Index = 0; Index < Count; Index++) {
+        ULONG   Length;
+
+        Length = (ULONG)strlen(Buffer);
+        Ansi[Index].MaximumLength = (USHORT)(Length + 1);
+        Ansi[Index].Buffer = __AdapterAllocate(Ansi[Index].MaximumLength);
+
+        status = STATUS_NO_MEMORY;
+        if (Ansi[Index].Buffer == NULL)
+            goto fail2;
+
+        RtlCopyMemory(Ansi[Index].Buffer, Buffer, Length);
+        Ansi[Index].Length = (USHORT)Length;
+
+        Buffer += Length + 1;
+    }
+
+    return Ansi;
+
+fail2:
+    Error("fail2\n");
+
+    while (--Index >= 0)
+        __AdapterFree(Ansi[Index].Buffer);
+
+    __AdapterFree(Ansi);
+
+fail1:
+    Error("fail1 (%08x)\n", status);
+
+    return NULL;
+}
+
+static FORCEINLINE VOID
+__AdapterFreeAnsi(
+    IN  PANSI_STRING    Ansi
+    )
+{
+    ULONG               Index;
+
+    for (Index = 0; Ansi[Index].Buffer != NULL; Index++)
+        __AdapterFree(Ansi[Index].Buffer);
+
+    __AdapterFree(Ansi);
+}
+
+static FORCEINLINE BOOLEAN
+__AdapterMatchDistribution(
+    IN  PXENNET_ADAPTER Adapter,
+    IN  PCHAR           Buffer
+    )
+{
+    PCHAR               Vendor;
+    PCHAR               Product;
+    PCHAR               Context;
+    const CHAR          *Text;
+    BOOLEAN             Match;
+    ULONG               Index;
+    NTSTATUS            status;
+
+    UNREFERENCED_PARAMETER(Adapter);
+
+    status = STATUS_INVALID_PARAMETER;
+
+    Vendor = __strtok_r(Buffer, " ", &Context);
+    if (Vendor == NULL)
+        goto fail1;
+
+    Product = __strtok_r(NULL, " ", &Context);
+    if (Product == NULL)
+        goto fail2;
+
+    Match = TRUE;
+
+    Text = VENDOR_NAME_STR;
+
+    for (Index = 0; Text[Index] != 0; Index++) {
+        if (!isalnum(Text[Index])) {
+            if (Vendor[Index] != '_') {
+                Match = FALSE;
+                break;
+            }
+        } else {
+            if (Vendor[Index] != Text[Index]) {
+                Match = FALSE;
+                break;
+            }
+        }
+    }
+
+    Text = "XENNET";
+
+    if (_stricmp(Product, Text) != 0)
+        Match = FALSE;
+
+    return Match;
+
+fail2:
+    Error("fail2\n");
+
+fail1:
+    Error("fail1 (%08x)\n", status);
+
+    return FALSE;
+}
+
+static FORCEINLINE VOID
+__AdapterClearDistribution(
+    IN  PXENNET_ADAPTER Adapter
+    )
+{
+    PCHAR               Buffer;
+    PANSI_STRING        Distributions;
+    ULONG               Index;
+    NTSTATUS            status;
+
+    Trace("====>\n");
+
+    status = XENBUS_STORE(Directory,
+                          &Adapter->StoreInterface,
+                          NULL,
+                          NULL,
+                          "drivers",
+                          &Buffer);
+    if (NT_SUCCESS(status)) {
+        Distributions = __AdapterMultiSzToUpcaseAnsi(Buffer);
+
+        XENBUS_STORE(Free,
+                     &Adapter->StoreInterface,
+                     Buffer);
+    } else {
+        Distributions = NULL;
+    }
+
+    if (Distributions == NULL)
+        goto done;
+
+    for (Index = 0; Distributions[Index].Buffer != NULL; Index++) {
+        PANSI_STRING    Distribution = &Distributions[Index];
+
+        status = XENBUS_STORE(Read,
+                              &Adapter->StoreInterface,
+                              NULL,
+                              "drivers",
+                              Distribution->Buffer,
+                              &Buffer);
+        if (!NT_SUCCESS(status))
+            continue;
+
+        if (__AdapterMatchDistribution(Adapter, Buffer))
+            (VOID) XENBUS_STORE(Remove,
+                                &Adapter->StoreInterface,
+                                NULL,
+                                "drivers",
+                                Distribution->Buffer);
+
+        XENBUS_STORE(Free,
+                     &Adapter->StoreInterface,
+                     Buffer);
+    }
+
+    __AdapterFreeAnsi(Distributions);
+
+done:
+    Trace("<====\n");
+}
+
+#define MAXIMUM_INDEX   255
+
+static FORCEINLINE NTSTATUS
+__AdapterSetDistribution(
+    IN  PXENNET_ADAPTER Adapter
+    )
+{
+    ULONG               Index;
+    CHAR                Distribution[MAXNAMELEN];
+    CHAR                Vendor[MAXNAMELEN];
+    const CHAR          *Product;
+    NTSTATUS            status;
+
+    Trace("====>\n");
+
+    Index = 0;
+    while (Index <= MAXIMUM_INDEX) {
+        PCHAR   Buffer;
+
+        status = RtlStringCbPrintfA(Distribution,
+                                    MAXNAMELEN,
+                                    "%u",
+                                    Index);
+        ASSERT(NT_SUCCESS(status));
+
+        status = XENBUS_STORE(Read,
+                              &Adapter->StoreInterface,
+                              NULL,
+                              "drivers",
+                              Distribution,
+                              &Buffer);
+        if (!NT_SUCCESS(status)) {
+            if (status == STATUS_OBJECT_NAME_NOT_FOUND)
+                goto update;
+
+            goto fail1;
+        }
+
+        XENBUS_STORE(Free,
+                     &Adapter->StoreInterface,
+                     Buffer);
+
+        Index++;
+    }
+
+    status = STATUS_UNSUCCESSFUL;
+    goto fail2;
+
+update:
+    status = RtlStringCbPrintfA(Vendor,
+                                MAXNAMELEN,
+                                "%s",
+                                VENDOR_NAME_STR);
+    ASSERT(NT_SUCCESS(status));
+
+    for (Index  = 0; Vendor[Index] != '\0'; Index++)
+        if (!isalnum(Vendor[Index]))
+            Vendor[Index] = '_';
+
+    Product = "XENNET";
+
+#if DBG
+#define ATTRIBUTES   "(DEBUG)"
+#else
+#define ATTRIBUTES   ""
+#endif
+
+    (VOID) XENBUS_STORE(Printf,
+                        &Adapter->StoreInterface,
+                        NULL,
+                        "drivers",
+                        Distribution,
+                        "%s %s %u.%u.%u %s",
+                        Vendor,
+                        Product,
+                        MAJOR_VERSION,
+                        MINOR_VERSION,
+                        MICRO_VERSION,
+                        ATTRIBUTES
+                        );
+
+#undef  ATTRIBUTES
+
+    Trace("<====\n");
+    return STATUS_SUCCESS;
+
+fail2:
+    Error("fail2\n");
+
+fail1:
+    Error("fail1 (%08x)\n", status);
+
+    return status;
+}
+
+static DECLSPEC_NOINLINE VOID
+AdapterSuspendCallbackLate(
+    IN  PVOID       Argument
+    )
+{
+    PXENNET_ADAPTER Adapter = Argument;
+
+    (VOID) __AdapterSetDistribution(Adapter);
+}
+
+static NTSTATUS
+AdapterSetDistribution(
+    IN  PXENNET_ADAPTER Adapter
+    )
+{
+    LONG                Count;
+    NTSTATUS            status;
+
+    Trace("====>\n");
+
+    Count = InterlockedIncrement(&AdapterCount);
+    ASSERT(Count != 0);
+
+    if (Count != 1)
+        goto done;
+
+    status = __AdapterSetDistribution(Adapter);
+    if (!NT_SUCCESS(status))
+        goto fail1;
+
+    status = XENBUS_SUSPEND(Register,
+                            &Adapter->SuspendInterface,
+                            SUSPEND_CALLBACK_LATE,
+                            AdapterSuspendCallbackLate,
+                            Adapter,
+                            &Adapter->SuspendCallbackLate);
+    if (!NT_SUCCESS(status))
+        goto fail2;
+
+done:
+    Trace("<====\n");
+    return STATUS_SUCCESS;
+
+fail2:
+    Error("fail2\n");
+
+    __AdapterClearDistribution(Adapter);
+
+fail1:
+    Error("fail1 (%08x)\n", status);
+
+    return status;
+}
+
+static VOID
+AdapterClearDistribution(
+    IN  PXENNET_ADAPTER Adapter
+    )
+{
+    LONG                Count;
+
+    Trace("====>\n");
+
+    ASSERT(AdapterCount != 0);
+    Count = InterlockedDecrement(&AdapterCount);
+
+    if (Count != 0)
+        goto done;
+
+    XENBUS_SUSPEND(Deregister,
+                   &Adapter->SuspendInterface,
+                   Adapter->SuspendCallbackLate);
+    Adapter->SuspendCallbackLate = NULL;
+
+    __AdapterClearDistribution(Adapter);
+
+done:
+    Trace("<====\n");
+}
+
 NDIS_STATUS
 AdapterInitialize(
     IN  NDIS_HANDLE         Handle,
@@ -2256,9 +2658,7 @@ AdapterInitialize(
     PDEVICE_OBJECT          DeviceObject;
     NDIS_SG_DMA_DESCRIPTION Dma;
 
-    *Adapter = ExAllocatePoolWithTag(NonPagedPool,
-                                     sizeof(XENNET_ADAPTER),
-                                     ADAPTER_POOL_TAG);
+    *Adapter = __AdapterAllocate(sizeof (XENNET_ADAPTER));
 
     ndisStatus = NDIS_STATUS_RESOURCES;
     if (*Adapter == NULL)
@@ -2293,45 +2693,75 @@ AdapterInitialize(
     if (!NT_SUCCESS(status))
         goto fail3;
 
+    status = __QueryInterface(DeviceObject,
+                              &GUID_XENBUS_STORE_INTERFACE,
+                              XENBUS_STORE_INTERFACE_VERSION_MAX,
+                              (PINTERFACE)&(*Adapter)->StoreInterface,
+                              sizeof(XENBUS_STORE_INTERFACE),
+                              FALSE);
+    if (!NT_SUCCESS(status))
+        goto fail4;
+
+    status = __QueryInterface(DeviceObject,
+                              &GUID_XENBUS_SUSPEND_INTERFACE,
+                              XENBUS_SUSPEND_INTERFACE_VERSION_MAX,
+                              (PINTERFACE)&(*Adapter)->SuspendInterface,
+                              sizeof(XENBUS_SUSPEND_INTERFACE),
+                              FALSE);
+    if (!NT_SUCCESS(status))
+        goto fail5;
+
     status = XENVIF_VIF(Acquire,
                         &(*Adapter)->VifInterface);
     if (!NT_SUCCESS(status))
-        goto fail4;
+        goto fail6;
 
     status = XENBUS_CACHE(Acquire,
                           &(*Adapter)->CacheInterface);
     if (!NT_SUCCESS(status))
-        goto fail5;
+        goto fail7;
+
+    status = XENBUS_STORE(Acquire,
+                          &(*Adapter)->StoreInterface);
+    if (!NT_SUCCESS(status))
+        goto fail8;
+
+    status = XENBUS_SUSPEND(Acquire,
+                            &(*Adapter)->SuspendInterface);
+    if (!NT_SUCCESS(status))
+        goto fail9;
+
+    (VOID) AdapterSetDistribution(*Adapter);
 
     (*Adapter)->NdisAdapterHandle = Handle;
 
     ndisStatus = TransmitterInitialize(*Adapter, &(*Adapter)->Transmitter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail6;
+        goto fail10;
 
     ndisStatus = ReceiverInitialize(*Adapter, &(*Adapter)->Receiver);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail7;
+        goto fail11;
 
     ndisStatus = AdapterGetAdvancedSettings(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail8;
+        goto fail12;
 
     ndisStatus = AdapterSetRegistrationAttributes(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail9;
+        goto fail13;
 
     ndisStatus = AdapterSetGeneralAttributes(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail10;
+        goto fail14;
 
     ndisStatus = AdapterSetOffloadAttributes(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail11;
+        goto fail15;
 
     ndisStatus = AdapterSetHeaderDataSplitAttributes(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail12;
+        goto fail16;
 
     RtlZeroMemory(&Dma, sizeof(NDIS_SG_DMA_DESCRIPTION));
     Dma.Header.Type = NDIS_OBJECT_TYPE_SG_DMA_DESCRIPTION;
@@ -2350,36 +2780,58 @@ AdapterInitialize(
 
     ndisStatus = AdapterEnable(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail13;
+        goto fail17;
 
     return NDIS_STATUS_SUCCESS;
 
-fail13:
+fail17:
     if ((*Adapter)->NdisDmaHandle)
         NdisMDeregisterScatterGatherDma((*Adapter)->NdisDmaHandle);
     (*Adapter)->NdisDmaHandle = NULL;
+
+fail16:
+fail15:
+fail14:
+fail13:
 fail12:
-fail11:
-fail10:
-fail9:
-fail8:
     ReceiverTeardown((*Adapter)->Receiver);
     (*Adapter)->Receiver = NULL;
-fail7:
+fail11:
+
     TransmitterTeardown((*Adapter)->Transmitter);
     (*Adapter)->Transmitter = NULL;
-fail6:
+
+fail10:
     (*Adapter)->NdisAdapterHandle = NULL;
 
+    AdapterClearDistribution(*Adapter);
+
+    XENBUS_SUSPEND(Release, &(*Adapter)->SuspendInterface);
+
+fail9:
+    XENBUS_STORE(Release, &(*Adapter)->StoreInterface);
+
+fail8:
     XENBUS_CACHE(Release, &(*Adapter)->CacheInterface);
-fail5:
+
+fail7:
     XENVIF_VIF(Release, &(*Adapter)->VifInterface);
+
+fail6:
+    RtlZeroMemory(&(*Adapter)->SuspendInterface, sizeof(XENBUS_SUSPEND_INTERFACE));
+
+fail5:
+    RtlZeroMemory(&(*Adapter)->StoreInterface, sizeof(XENBUS_STORE_INTERFACE));
+
 fail4:
     RtlZeroMemory(&(*Adapter)->CacheInterface, sizeof(XENBUS_CACHE_INTERFACE));
+
 fail3:
     RtlZeroMemory(&(*Adapter)->VifInterface, sizeof(XENVIF_VIF_INTERFACE));
+
 fail2:
-    ExFreePoolWithTag(*Adapter, ADAPTER_POOL_TAG);
+    __AdapterFree(*Adapter);
+
 fail1:
     return ndisStatus;
 }
@@ -2399,11 +2851,17 @@ AdapterTeardown(
         NdisMDeregisterScatterGatherDma(Adapter->NdisDmaHandle);
     Adapter->NdisDmaHandle = NULL;
 
-    XENBUS_CACHE(Release, &Adapter->CacheInterface);
-    RtlZeroMemory(&Adapter->CacheInterface, sizeof(XENBUS_CACHE_INTERFACE));
+    AdapterClearDistribution(Adapter);
 
+    XENBUS_SUSPEND(Release, &Adapter->SuspendInterface);
+    XENBUS_STORE(Release, &Adapter->StoreInterface);
+    XENBUS_CACHE(Release, &Adapter->CacheInterface);
     XENVIF_VIF(Release, &Adapter->VifInterface);
+
+    RtlZeroMemory(&Adapter->SuspendInterface, sizeof(XENBUS_SUSPEND_INTERFACE));
+    RtlZeroMemory(&Adapter->StoreInterface, sizeof(XENBUS_STORE_INTERFACE));
+    RtlZeroMemory(&Adapter->CacheInterface, sizeof(XENBUS_CACHE_INTERFACE));
     RtlZeroMemory(&Adapter->VifInterface, sizeof(XENVIF_VIF_INTERFACE));
 
-    ExFreePoolWithTag(Adapter, ADAPTER_POOL_TAG);
+    __AdapterFree(Adapter);
 }
