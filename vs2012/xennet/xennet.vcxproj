@@ -40,7 +40,7 @@
 		</ClCompile>
 		<Link>
 			<ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
-			<AdditionalDependencies>$(DDK_LIB_PATH)\ndis.lib;%(AdditionalDependencies)</AdditionalDependencies>
+			<AdditionalDependencies>$(DDK_LIB_PATH)\ndis.lib;$(DDK_LIB_PATH)/libcntpr.lib;%(AdditionalDependencies)</AdditionalDependencies>
 			<EnableCOMDATFolding>false</EnableCOMDATFolding>
 		</Link>
 		<Inf>
