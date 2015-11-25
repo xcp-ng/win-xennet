@@ -2630,7 +2630,6 @@ AdapterClearDistribution(
 
     Trace("====>\n");
 
-    ASSERT(AdapterCount != 0);
     Count = InterlockedDecrement(&AdapterCount);
 
     if (Count != 0)
