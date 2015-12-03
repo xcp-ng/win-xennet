@@ -66,7 +66,7 @@ MiniportInitializeEx(
     PXENNET_ADAPTER                     Adapter;
     NDIS_STATUS                         NdisStatus;
 
-    Trace("====>\n");
+    Info("====>\n");
 
     UNREFERENCED_PARAMETER(MiniportDriverContext);
     UNREFERENCED_PARAMETER(MiniportInitParameters);
@@ -75,7 +75,7 @@ MiniportInitializeEx(
     if (NdisStatus != NDIS_STATUS_SUCCESS)
         goto fail1;
 
-    Trace("<====\n");
+    Info("<====\n");
 
     return NDIS_STATUS_SUCCESS;
 
@@ -97,16 +97,14 @@ MiniportHaltEx(
 
     UNREFERENCED_PARAMETER(HaltAction);
 
-    Trace("====>\n");
+    Info("====>\n");
 
     if (Adapter == NULL)
         return;
 
-    (VOID) AdapterDisable(Adapter);
-
     AdapterTeardown(Adapter);
 
-    Trace("<====\n");
+    Info("<====\n");
 }
 
 static
@@ -131,12 +129,11 @@ MiniportPause(
 
     UNREFERENCED_PARAMETER(MiniportPauseParameters);
 
-    Trace("====>\n");
+    Info("====>\n");
 
-    if (AdapterDisable(Adapter))
-        AdapterMediaStateChange(Adapter);
+    AdapterDisable(Adapter);
 
-    Trace("<====\n");
+    Info("<====\n");
 
     return NDIS_STATUS_SUCCESS;
 }
@@ -154,11 +151,11 @@ MiniportRestart(
 
     UNREFERENCED_PARAMETER(MiniportRestartParameters);
 
-    Trace("====>\n");
+    Info("====>\n");
 
     NdisStatus = AdapterEnable(Adapter);
 
-    Trace("<====\n");
+    Info("<====\n");
 
     return NdisStatus;
 }

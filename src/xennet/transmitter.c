@@ -141,16 +141,10 @@ TransmitterInitialize (
     OUT PXENNET_TRANSMITTER *Transmitter
     )
 {
-    NTSTATUS                status;
-    PXENBUS_CACHE_INTERFACE CacheInterface;
-
-    CacheInterface = AdapterGetCacheInterface(Adapter);
-
     *Transmitter = ExAllocatePoolWithTag(NonPagedPool,
                                          sizeof(XENNET_TRANSMITTER),
                                          TRANSMITTER_POOL_TAG);
 
-    status = STATUS_NO_MEMORY;
     if (*Transmitter == NULL)
         goto fail1;
 
@@ -159,6 +153,22 @@ TransmitterInitialize (
     (*Transmitter)->Adapter = Adapter;
 
     KeInitializeSpinLock(&(*Transmitter)->Lock);
+
+    return NDIS_STATUS_SUCCESS;
+
+fail1:
+    return NDIS_STATUS_FAILURE;
+}
+
+NDIS_STATUS
+TransmitterEnable (
+    IN  PXENNET_TRANSMITTER Transmitter
+    )
+{
+    PXENBUS_CACHE_INTERFACE CacheInterface;
+    NTSTATUS                status;
+
+    CacheInterface = AdapterGetCacheInterface(Transmitter->Adapter);
 
     status = XENBUS_CACHE(Create,
                           CacheInterface,
@@ -169,10 +179,10 @@ TransmitterInitialize (
                           __TransmitterPacketDtor,
                           __TransmitterPacketAcquireLock,
                           __TransmitterPacketReleaseLock,
-                          *Transmitter,
-                          &(*Transmitter)->PacketCache);
+                          Transmitter,
+                          &Transmitter->PacketCache);
     if (!NT_SUCCESS(status))
-        goto fail2;
+        goto fail1;
 
     status = XENBUS_CACHE(Create,
                           CacheInterface,
@@ -183,27 +193,20 @@ TransmitterInitialize (
                           __TransmitterBufferDtor,
                           __TransmitterBufferAcquireLock,
                           __TransmitterBufferReleaseLock,
-                          *Transmitter,
-                          &(*Transmitter)->BufferCache);
+                          Transmitter,
+                          &Transmitter->BufferCache);
     if (!NT_SUCCESS(status))
-        goto fail3;
+        goto fail2;
 
     return NDIS_STATUS_SUCCESS;
-
-fail3:
-    XENBUS_CACHE(Destroy,
-                 CacheInterface,
-                 (*Transmitter)->PacketCache);
-    (*Transmitter)->PacketCache = NULL;
 
 fail2:
     Error("fail2\n");
 
-    RtlZeroMemory(&(*Transmitter)->Lock, sizeof(KSPIN_LOCK));
-
-    ExFreePoolWithTag(*Transmitter, TRANSMITTER_POOL_TAG);
-
-    *Transmitter = NULL;
+    XENBUS_CACHE(Destroy,
+                 CacheInterface,
+                 Transmitter->PacketCache);
+    Transmitter->PacketCache = NULL;
 
 fail1:
     Error("fail1\n (%08x)", status);
@@ -212,16 +215,13 @@ fail1:
 }
 
 VOID
-TransmitterTeardown(
+TransmitterDisable (
     IN  PXENNET_TRANSMITTER Transmitter
     )
 {
     PXENBUS_CACHE_INTERFACE CacheInterface;
 
     CacheInterface = AdapterGetCacheInterface(Transmitter->Adapter);
-
-    Transmitter->Adapter = NULL;
-    Transmitter->OffloadOptions.Value = 0;
 
     XENBUS_CACHE(Destroy,
                  CacheInterface,
@@ -232,6 +232,15 @@ TransmitterTeardown(
                  CacheInterface,
                  Transmitter->PacketCache);
     Transmitter->PacketCache = NULL;
+}
+
+VOID
+TransmitterTeardown(
+    IN  PXENNET_TRANSMITTER Transmitter
+    )
+{
+    Transmitter->Adapter = NULL;
+    Transmitter->OffloadOptions.Value = 0;
 
     RtlZeroMemory(&Transmitter->Lock, sizeof(KSPIN_LOCK));
 
