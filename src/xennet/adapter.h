@@ -112,7 +112,7 @@ AdapterEnable(
     IN  PXENNET_ADAPTER     Adapter
     );
 
-extern BOOLEAN
+extern VOID
 AdapterDisable(
     IN  PXENNET_ADAPTER     Adapter
     );

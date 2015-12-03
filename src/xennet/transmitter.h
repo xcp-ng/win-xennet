@@ -43,6 +43,16 @@ TransmitterInitialize(
     OUT PXENNET_TRANSMITTER *Transmitter
     );
 
+extern NDIS_STATUS
+TransmitterEnable(
+    IN  PXENNET_TRANSMITTER Transmitter
+    );
+
+extern VOID
+TransmitterDisable(
+    IN  PXENNET_TRANSMITTER Transmitter
+    );
+
 extern VOID
 TransmitterTeardown(
     IN  PXENNET_TRANSMITTER Transmitter

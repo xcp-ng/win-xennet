@@ -310,6 +310,24 @@ fail1:
     return status;
 }
 
+NDIS_STATUS
+ReceiverEnable (
+    IN  PXENNET_RECEIVER    Receiver
+    )
+{
+    UNREFERENCED_PARAMETER(Receiver);
+
+    return NDIS_STATUS_SUCCESS;
+}
+
+VOID
+ReceiverDisable (
+    IN  PXENNET_RECEIVER    Receiver
+    )
+{
+    UNREFERENCED_PARAMETER(Receiver);
+}
+
 VOID
 ReceiverTeardown(
     IN  PXENNET_RECEIVER    Receiver

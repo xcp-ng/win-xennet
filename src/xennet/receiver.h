@@ -43,6 +43,16 @@ ReceiverInitialize(
     OUT PXENNET_RECEIVER    *Receiver
     );
 
+extern NDIS_STATUS
+ReceiverEnable(
+    IN  PXENNET_RECEIVER    Receiver
+    );
+
+extern VOID
+ReceiverDisable(
+    IN  PXENNET_RECEIVER    Receiver
+    );
+
 extern VOID
 ReceiverTeardown(
     IN  PXENNET_RECEIVER    Receiver
