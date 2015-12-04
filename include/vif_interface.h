@@ -43,6 +43,28 @@
 #include <ifdef.h>
 #include <ethernet.h>
 
+/*! \enum _XENVIF_PACKET_HASH_ALGORITHM
+    \brief Hash algorithm
+*/
+typedef enum _XENVIF_PACKET_HASH_ALGORITHM {
+    /*! None (value should be ignored) */
+    XENVIF_PACKET_HASH_ALGORITHM_NONE = 0,
+    /*! Unspecified hash (value can be used) */
+    XENVIF_PACKET_HASH_ALGORITHM_UNSPECIFIED
+} XENVIF_PACKET_HASH_ALGORITHM, *PXENVIF_PACKET_HASH_ALGORITHM;
+
+/*! \struct _XENVIF_PACKET_HASH_V1
+    \brief Hash information
+*/
+struct _XENVIF_PACKET_HASH_V1 {
+    /*! Hash algorithm used to calculate value */
+    XENVIF_PACKET_HASH_ALGORITHM    Algorithm;
+    /*! Calculated value */
+    ULONG                           Value;
+};
+
+typedef struct _XENVIF_PACKET_HASH_V1 XENVIF_PACKET_HASH, *PXENVIF_PACKET_HASH;
+
 /*! \struct _XENVIF_PACKET_HEADER_V1
     \brief Packet header information
 */
@@ -53,14 +75,25 @@ struct  _XENVIF_PACKET_HEADER_V1 {
     ULONG   Length;
 };
 
-/*! \struct _XENVIF_PACKET_INFO_V1
+struct _XENVIF_PACKET_INFO_V1 {
+    ULONG                           Length;
+    USHORT                          TagControlInformation;
+    BOOLEAN                         IsAFragment;
+    struct _XENVIF_PACKET_HEADER_V1 EthernetHeader;
+    struct _XENVIF_PACKET_HEADER_V1 LLCSnapHeader;
+    struct _XENVIF_PACKET_HEADER_V1 IpHeader;
+    struct _XENVIF_PACKET_HEADER_V1 IpOptions;
+    struct _XENVIF_PACKET_HEADER_V1 TcpHeader;
+    struct _XENVIF_PACKET_HEADER_V1 TcpOptions;
+    struct _XENVIF_PACKET_HEADER_V1 UdpHeader;
+};
+
+/*! \struct _XENVIF_PACKET_INFO_V2
     \brief Packet information
 */
-struct _XENVIF_PACKET_INFO_V1 {
+struct _XENVIF_PACKET_INFO_V2 {
     /*! Total length of all headers */
     ULONG                           Length;
-    /*! VLAN TCI if present (0 indicates not present) */
-    USHORT                          TagControlInformation;
     /*! TRUE if the packet is an IP fragment */
     BOOLEAN                         IsAFragment;
     /*! Ethernet header (stripped of any VLAN tag) */
@@ -79,7 +112,7 @@ struct _XENVIF_PACKET_INFO_V1 {
     struct _XENVIF_PACKET_HEADER_V1 UdpHeader;
 };
 
-typedef struct _XENVIF_PACKET_INFO_V1   XENVIF_PACKET_INFO, *PXENVIF_PACKET_INFO;
+typedef struct _XENVIF_PACKET_INFO_V2   XENVIF_PACKET_INFO, *PXENVIF_PACKET_INFO;
 
 #pragma warning(push)
 #pragma warning(disable:4214)   // nonstandard extension used : bit field types other than int
@@ -120,31 +153,17 @@ typedef struct _XENVIF_PACKET_CHECKSUM_FLAGS_V1 XENVIF_PACKET_CHECKSUM_FLAGS, *P
 
 #pragma warning(pop)
 
-/*! \struct _XENVIF_RECEIVER_PACKET_V1
-    \brief Receive-side packet structure
-*/
 struct _XENVIF_RECEIVER_PACKET_V1 {
-    /*! List entry used for chaining packets together */
     LIST_ENTRY                              ListEntry;
-    /*! Pointer to packet information */
     struct _XENVIF_PACKET_INFO_V1           *Info;
-    /*! Offset of start of packet in MDL */
     ULONG                                   Offset;
-    /*! Total length of packet */
     ULONG                                   Length;
-    /*! Checksum flags */
     struct _XENVIF_PACKET_CHECKSUM_FLAGS_V1 Flags;
-    /*! TCP MSS if the packet contains a TCP large segment */
     USHORT                                  MaximumSegmentSize;
-    /*! Opaque cookie used to store context information for packet return */
     PVOID                                   Cookie;
-    /*! MDL referencing the initial buffer of the packet */
     MDL                                     Mdl;
-    /*! PFN information, which must always follow an MDL */
     PFN_NUMBER                              __Pfn;
 };
-
-typedef struct _XENVIF_RECEIVER_PACKET_V1 XENVIF_RECEIVER_PACKET, *PXENVIF_RECEIVER_PACKET;
 
 #pragma warning(push)
 #pragma warning(disable:4214)   // nonstandard extension used : bit field types other than int
@@ -190,32 +209,18 @@ typedef struct _XENVIF_VIF_OFFLOAD_OPTIONS_V1 XENVIF_VIF_OFFLOAD_OPTIONS, *PXENV
 
 #pragma pack(push, 1) 
 
-/*! \struct _XENVIF_TRANSMITTER_PACKET_SEND_INFO_V1
-    \brief Packet information passed from subscriber to provider on
-    transmit side packet send
-
-    To fit into the reserved space in NDIS_PACKET and NET_BUFFER structures
-    this structure must be at most the size of 3 pointer types.
-*/
 struct _XENVIF_TRANSMITTER_PACKET_SEND_INFO_V1 {
-    /*! Offload options for this packet */
     XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
-    /*! TCP MSS (used only if OffloadOptions.OffloadIpVersion[4|6]LargePacket is set) */
     USHORT                      MaximumSegmentSize;
-    /*! VLAN TCI (used only if OffloadOptions.OffloadTagManipulation is set) */
     USHORT                      TagControlInformation;
 };
-
-typedef struct _XENVIF_TRANSMITTER_PACKET_SEND_INFO_V1 XENVIF_TRANSMITTER_PACKET_SEND_INFO, *PXENVIF_TRANSMITTER_PACKET_SEND_INFO;
 
 /*! \enum _XENVIF_TRANSMITTER_PACKET_STATUS
     \brief Transmit-side packet status
 */
 typedef enum _XENVIF_TRANSMITTER_PACKET_STATUS {
-    /*! Packet was queued for the backend */
-    XENVIF_TRANSMITTER_PACKET_PENDING = 1,
     /*! Packet has been successfully processed by the backend */
-    XENVIF_TRANSMITTER_PACKET_OK,
+    XENVIF_TRANSMITTER_PACKET_OK = 2,
     /*! Packet was dropped */
     XENVIF_TRANSMITTER_PACKET_DROPPED,
     /*! There was a problem handling the packet */
@@ -242,72 +247,18 @@ struct _XENVIF_TRANSMITTER_PACKET_COMPLETION_INFO_V1 {
 
 typedef struct _XENVIF_TRANSMITTER_PACKET_COMPLETION_INFO_V1 XENVIF_TRANSMITTER_PACKET_COMPLETION_INFO, *PXENVIF_TRANSMITTER_PACKET_COMPLETION_INFO;
 
-#pragma warning(push)
-#pragma warning(disable:4201)   // nonstandard extension used : nameless struct/union
-
-/*! \struct _XENVIF_TRANSMITTER_PACKET_V1
-    \brief Transmit-side packet structure
-*/
-struct _XENVIF_TRANSMITTER_PACKET_V1 {
-    /*! Pointer used for chaining packets together */
-    struct _XENVIF_TRANSMITTER_PACKET_V1                        *Next;
-    union {
-        struct _XENVIF_TRANSMITTER_PACKET_SEND_INFO_V1          Send;
-        struct _XENVIF_TRANSMITTER_PACKET_COMPLETION_INFO_V1    Completion;
-    };
-};
-
-typedef struct _XENVIF_TRANSMITTER_PACKET_V1 XENVIF_TRANSMITTER_PACKET_V1, *PXENVIF_TRANSMITTER_PACKET_V1;
-
-#pragma warning(pop)
-
 #pragma pack(pop) 
 
-C_ASSERT(sizeof (struct _XENVIF_TRANSMITTER_PACKET_V1) <= (3 * sizeof (PVOID)));
-
-/*! \struct _XENVIF_TRANSMITTER_PACKET_V2
-    \brief Transmit-side packet structure (v2)
-*/
 struct _XENVIF_TRANSMITTER_PACKET_V2 {
-    /*! List entry used for chaining packets together */
-    LIST_ENTRY                                  ListEntry;
-    /*! Opaque cookie used to store context information for packet return */
-    PVOID                                       Cookie;
-    /*! Hash value set by subscriber */
-    ULONG                                       Value;
-    /*! Packet information passed from subscriber to provider */
-    XENVIF_TRANSMITTER_PACKET_SEND_INFO         Send;
-    /*! Packet information passed from provider to subscriber on packet return */
-    XENVIF_TRANSMITTER_PACKET_COMPLETION_INFO   Completion;
-    /*! Packet data MDL */
-    PMDL                                        Mdl;
-    /*! Offset into MDL to start of packet */
-    ULONG                                       Offset;
-    /*! Packet length */
-    ULONG                                       Length;
+    LIST_ENTRY                                              ListEntry;
+    PVOID                                                   Cookie;
+    ULONG                                                   Value;
+    struct _XENVIF_TRANSMITTER_PACKET_SEND_INFO_V1          Send;
+    struct _XENVIF_TRANSMITTER_PACKET_COMPLETION_INFO_V1    Completion;
+    PMDL                                                    Mdl;
+    ULONG                                                   Offset;
+    ULONG                                                   Length;
 };
-
-typedef struct _XENVIF_TRANSMITTER_PACKET_V2 XENVIF_TRANSMITTER_PACKET, *PXENVIF_TRANSMITTER_PACKET;
-
-/*! \enum _XENVIF_TRANSMITTER_PACKET_OFFSET
-    \brief Offsets of packet metadata relative to
-    XENVIF_TRANSMITTER_PACKET pointer
-
-    Because the transmit side packet structure is limited to 3 pointer
-    types in size, not all information about the packet can be passed in
-    the structure. Other information can, however, be found by applying
-    these byte offsets to the structure pointer and then dereferencing the
-    specified type.
-*/
-typedef enum _XENVIF_TRANSMITTER_PACKET_OFFSET {
-    /*! The offset of the start of the packet within the MDL (type ULONG) */
-    XENVIF_TRANSMITTER_PACKET_OFFSET_OFFSET = 0,
-    /*! The total length of the packet (type ULONG) */
-    XENVIF_TRANSMITTER_PACKET_LENGTH_OFFSET,
-    /*! MDL referencing the initial buffer of the packet (type PMDL) */
-    XENVIF_TRANSMITTER_PACKET_MDL_OFFSET,
-    XENVIF_TRANSMITTER_PACKET_OFFSET_COUNT
-} XENVIF_TRANSMITTER_PACKET_OFFSET, *PXENVIF_TRANSMITTER_PACKET_OFFSET;
 
 /*! \enum _XENVIF_VIF_STATISTIC
     \brief Interface statistics
@@ -368,10 +319,10 @@ typedef enum _XENVIF_MAC_FILTER_LEVEL {
     \brief Type of callback (see \ref XENVIF_VIF_CALLBACK)
 */
 typedef enum _XENVIF_VIF_CALLBACK_TYPE {
-    /*! Return transmit side packets to the subscriber */
-    XENVIF_TRANSMITTER_RETURN_PACKETS = 0,
-    /*! Queue receive side packets at the subscriber */
-    XENVIF_RECEIVER_QUEUE_PACKETS,
+    /*! Return a transmit side packet to the subscriber */
+    XENVIF_TRANSMITTER_RETURN_PACKET = 0,
+    /*! Queue a receive side packet at the subscriber */
+    XENVIF_RECEIVER_QUEUE_PACKET,
     /*! Notify the subscriber of a MAC (link) state has change */
     XENVIF_MAC_STATE_CHANGE
 } XENVIF_VIF_CALLBACK_TYPE, *PXENVIF_VIF_CALLBACK_TYPE;
@@ -403,11 +354,19 @@ typedef VOID
     \param Type The callback type
     \param ... Additional paramaters required by \a Type
 
-    \b XENVIF_TRANSMITTER_RETURN_PACKETS:
-    \param Head The head of a chain of XENVIF_TRANSMITTER_PACKET
+    \b XENVIF_TRANSMITTER_RETURN_PACKET:
+    \param Cookie Cookie supplied to XENVIF_TRANSMITTER_QUEUE_PACKET
+    \param Completion Packet completion information
 
-    \b XENVIF_RECEIVER_QUEUE_PACKETS:
-    \param List List of XENVIF_TRANSMITTER_PACKET
+    \b XENVIF_RECEIVER_QUEUE_PACKET:
+    \param Mdl The initial MDL of the packet
+    \param Offset The offset of the packet data in the initial MDL
+    \param Length The total length of the packet
+    \param Flags Packet checksum flags
+    \param MaximumSegmentSize The TCP MSS (used only if OffloadOptions.OffloadIpVersion[4|6]LargePacket is set)
+    \param TagControlInformation The VLAN TCI (used only if OffloadOptions.OffloadTagManipulation is set)
+    \param Info Header information for the packet
+    \param Cookie Cookie that should be passed to XENVIF_RECEIVER_RETURN_PACKET method
 
     \b XENVIF_MAC_STATE_CHANGE:
     No additional arguments
@@ -468,74 +427,63 @@ typedef NTSTATUS
     OUT PULONGLONG              Value
     );
 
-/*! \typedef XENVIF_VIF_RECEIVER_RETURN_PACKETS
-    \brief Return packets queues for receive by \ref XENVIF_VIF_CALLBACK
-    (Type = \ref XENVIF_RECEIVER_QUEUE_PACKETS)
-
-    \param Interface The interface header
-    \param List List of \ref _XENVIF_RECEIVER_PACKET_V1
-*/
 typedef VOID
-(*XENVIF_VIF_RECEIVER_RETURN_PACKETS)(
+(*XENVIF_VIF_RECEIVER_RETURN_PACKETS_V1)(
     IN  PINTERFACE  Interface,
     IN  PLIST_ENTRY List
     );
 
-/*! \typedef XENVIF_VIF_TRANSMITTER_SET_PACKET_OFFSET
-    \brief Set byte offset of packet information relative to
-    XENVIF_TRANSMITTER_PACKET pointer.
-
-    See \ref _XENVIF_TRANSMITTER_PACKET_OFFSET.
+/*! \typedef XENVIF_VIF_RECEIVER_RETURN_PACKET
+    \brief Return packets queued for receive by \ref XENVIF_VIF_CALLBACK
+    (Type = \ref XENVIF_RECEIVER_QUEUE_PACKET)
 
     \param Interface The interface header
-    \param Type The offset type
-    \param Value The offset value
+    \param Cookie Cookie passed to XENVIF_RECEIVER_QUEUE_PACKET callback
 */
-typedef NTSTATUS
-(*XENVIF_VIF_TRANSMITTER_SET_PACKET_OFFSET)(
-    IN  PINTERFACE                          Interface,
-    IN  XENVIF_TRANSMITTER_PACKET_OFFSET    Type,
-    IN  LONG_PTR                            Value
+typedef VOID
+(*XENVIF_VIF_RECEIVER_RETURN_PACKET)(
+    IN  PINTERFACE  Interface,
+    IN  PVOID       Cookie
     );
 
-/*! \typedef XENVIF_VIF_TRANSMITTER_GET_PACKET_HEADERS
-    \brief Get the packet headers into supplied buffer
-
-    \param Interface The interface header
-    \param Packet The packet to acquire headers for.
-    \param Headers The buffer to receive headers.
-    \param Info The offsets into Headers for relevant headers
-*/
 typedef NTSTATUS
-(*XENVIF_VIF_TRANSMITTER_GET_PACKET_HEADERS)(
-    IN  PINTERFACE                  Interface,
-    IN  PXENVIF_TRANSMITTER_PACKET  Packet,
-    OUT PVOID                       Headers,
-    OUT PXENVIF_PACKET_INFO         Info
+(*XENVIF_VIF_TRANSMITTER_GET_PACKET_HEADERS_V2)(
+    IN  PINTERFACE                              Interface,
+    IN  struct _XENVIF_TRANSMITTER_PACKET_V2    *Packet,
+    OUT PVOID                                   Headers,
+    OUT PXENVIF_PACKET_INFO                     Info
     );
 
-/*! \typedef XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS
-    \brief Queue transmit side packets at the provider
-
-    \param Interface The interface header
-    \param Head The head of a chain of _XENVIF_TRANSMITTER_PACKET_V1
-*/
-typedef NTSTATUS
-(*XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS)(
-    IN  PINTERFACE                      Interface,
-    IN  PXENVIF_TRANSMITTER_PACKET_V1   Head
-    );
-
-/*! \typedef XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS_V2
-    \brief Queue transmit side packets at the provider
-
-    \param Interface The interface header
-    \param List List of _XENVIF_TRANSMITTER_PACKET_V2
-*/
 typedef NTSTATUS
 (*XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS_V2)(
     IN  PINTERFACE  Interface,
     IN  PLIST_ENTRY List
+    );
+
+/*! \typedef XENVIF_VIF_TRANSMITTER_QUEUE_PACKET
+    \brief Queue a packet at the provider's transmit side
+
+    \param Interface The interface header
+    \param Mdl The initial MDL of the packet
+    \param Offset The offset of the packet data in the initial MDL
+    \param Length The total length of the packet
+    \param OffloadOptions The requested offload options for this packet
+    \param MaximumSegmentSize The TCP MSS (used only if OffloadOptions.OffloadIpVersion[4|6]LargePacket is set)
+    \param TagControlInformation The VLAN TCI (used only if OffloadOptions.OffloadTagManipulation is set)
+    \param Hash Hash information for the packet
+    \param Cookie A cookie specified by the caller that will be passed to the XENVIF_TRANSMITTER_RETURN_PACKET callback
+*/
+typedef VOID
+(*XENVIF_VIF_TRANSMITTER_QUEUE_PACKET)(
+    IN  PINTERFACE                  Interface,
+    IN  PMDL                        Mdl,
+    IN  ULONG                       Offset,
+    IN  ULONG                       Length,
+    IN  XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions,
+    IN  USHORT                      MaximumSegmentSize,
+    IN  USHORT                      TagControlInformation,
+    IN  PXENVIF_PACKET_HASH         Hash,
+    IN  PVOID                       Cookie
     );
 
 /*! \typedef XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS
@@ -564,6 +512,19 @@ typedef VOID
     IN  XENVIF_VIF_OFFLOAD_OPTIONS  Options
     );
 
+/*! \typedef XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE
+    \brief Set the required receive backfill size (free space before
+    packet payload).
+
+    \param Interface The interface header
+    \param Size The required size
+*/
+typedef VOID
+(*XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE)(
+    IN  PINTERFACE  Interface,
+    IN  ULONG       Size
+    );
+
 /*! \typedef XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE
     \brief Query the maximum size of packet containing a TCP large segment
     that can be handled by the transmit side
@@ -581,7 +542,7 @@ typedef VOID
 
 /*! \typedef XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE
     \brief Query the maximum number of transmit side packets that can
-    be queued in the shared ring between frontend and backend
+    be queued in each shared ring between frontend and backend
 
     \param Interface The interface header
     \param Size Buffer to receive the maximum number of packets
@@ -594,7 +555,7 @@ typedef VOID
 
 /*! \typedef XENVIF_VIF_RECEIVER_QUERY_RING_SIZE
     \brief Query the maximum number of receive side packets that can
-    be queued in the shared ring between backend and frontend
+    be queued in each shared ring between backend and frontend
 
     \param Interface The interface header
     \param Size Buffer to receive the maximum number of packets
@@ -731,36 +692,6 @@ typedef NTSTATUS
 DEFINE_GUID(GUID_XENVIF_VIF_INTERFACE, 
 0x76f279cd, 0xca11, 0x418b, 0x92, 0xe8, 0xc5, 0x7f, 0x77, 0xde, 0xe, 0x2e);
 
-/*! \struct _XENVIF_VIF_INTERFACE_V1
-    \brief VIF interface version 1
-    \ingroup interfaces
-*/
-struct _XENVIF_VIF_INTERFACE_V1 {
-    INTERFACE                                       Interface;
-    XENVIF_VIF_ACQUIRE                              Acquire;
-    XENVIF_VIF_RELEASE                              Release;
-    XENVIF_VIF_ENABLE                               Enable;
-    XENVIF_VIF_DISABLE                              Disable;
-    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
-    XENVIF_VIF_RECEIVER_RETURN_PACKETS              ReceiverReturnPackets;
-    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
-    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
-    XENVIF_VIF_TRANSMITTER_SET_PACKET_OFFSET        TransmitterSetPacketOffset;
-    XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS            TransmitterQueuePackets;
-    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
-    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
-    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
-    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
-    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
-    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
-    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
-    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
-    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
-    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
-    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
-};
-
-
 /*! \struct _XENVIF_VIF_INTERFACE_V2
     \brief VIF interface version 2
     \ingroup interfaces
@@ -772,11 +703,11 @@ struct _XENVIF_VIF_INTERFACE_V2 {
     XENVIF_VIF_ENABLE                               Enable;
     XENVIF_VIF_DISABLE                              Disable;
     XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
-    XENVIF_VIF_RECEIVER_RETURN_PACKETS              ReceiverReturnPackets;
+    XENVIF_VIF_RECEIVER_RETURN_PACKETS_V1           ReceiverReturnPacketsVersion1;
     XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
     XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
-    XENVIF_VIF_TRANSMITTER_GET_PACKET_HEADERS       TransmitterGetPacketHeaders;
-    XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS_V2         TransmitterQueuePackets;
+    XENVIF_VIF_TRANSMITTER_GET_PACKET_HEADERS_V2    TransmitterGetPacketHeadersVersion2;
+    XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS_V2         TransmitterQueuePacketsVersion2;
     XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
     XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
     XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
@@ -790,7 +721,66 @@ struct _XENVIF_VIF_INTERFACE_V2 {
     XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
 };
 
-typedef struct _XENVIF_VIF_INTERFACE_V2 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTERFACE;
+/*! \struct _XENVIF_VIF_INTERFACE_V3
+    \brief VIF interface version 3
+    \ingroup interfaces
+*/
+struct _XENVIF_VIF_INTERFACE_V3 {
+    INTERFACE                                       Interface;
+    XENVIF_VIF_ACQUIRE                              Acquire;
+    XENVIF_VIF_RELEASE                              Release;
+    XENVIF_VIF_ENABLE                               Enable;
+    XENVIF_VIF_DISABLE                              Disable;
+    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
+    XENVIF_VIF_RECEIVER_RETURN_PACKETS_V1           ReceiverReturnPacketsVersion1;
+    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
+    XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE           ReceiverSetBackfillSize;
+    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
+    XENVIF_VIF_TRANSMITTER_GET_PACKET_HEADERS_V2    TransmitterGetPacketHeadersVersion2;
+    XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS_V2         TransmitterQueuePacketsVersion2;
+    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
+    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
+    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
+    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
+    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
+    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
+    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
+    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
+    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
+    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
+    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
+};
+
+/*! \struct _XENVIF_VIF_INTERFACE_V4
+    \brief VIF interface version 4
+    \ingroup interfaces
+*/
+struct _XENVIF_VIF_INTERFACE_V4 {
+    INTERFACE                                       Interface;
+    XENVIF_VIF_ACQUIRE                              Acquire;
+    XENVIF_VIF_RELEASE                              Release;
+    XENVIF_VIF_ENABLE                               Enable;
+    XENVIF_VIF_DISABLE                              Disable;
+    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
+    XENVIF_VIF_RECEIVER_RETURN_PACKET               ReceiverReturnPacket;
+    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
+    XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE           ReceiverSetBackfillSize;
+    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
+    XENVIF_VIF_TRANSMITTER_QUEUE_PACKET             TransmitterQueuePacket;
+    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
+    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
+    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
+    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
+    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
+    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
+    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
+    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
+    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
+    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
+    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
+};
+
+typedef struct _XENVIF_VIF_INTERFACE_V4 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTERFACE;
 
 /*! \def XENVIF_VIF
     \brief Macro at assist in method invocation
@@ -800,7 +790,7 @@ typedef struct _XENVIF_VIF_INTERFACE_V2 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTER
 
 #endif  // _WINDLL
 
-#define XENVIF_VIF_INTERFACE_VERSION_MIN    1
-#define XENVIF_VIF_INTERFACE_VERSION_MAX    2
+#define XENVIF_VIF_INTERFACE_VERSION_MIN    2
+#define XENVIF_VIF_INTERFACE_VERSION_MAX    4
 
 #endif  // _XENVIF_INTERFACE_H

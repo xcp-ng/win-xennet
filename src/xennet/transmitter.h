@@ -43,16 +43,6 @@ TransmitterInitialize(
     OUT PXENNET_TRANSMITTER *Transmitter
     );
 
-extern NDIS_STATUS
-TransmitterEnable(
-    IN  PXENNET_TRANSMITTER Transmitter
-    );
-
-extern VOID
-TransmitterDisable(
-    IN  PXENNET_TRANSMITTER Transmitter
-    );
-
 extern VOID
 TransmitterTeardown(
     IN  PXENNET_TRANSMITTER Transmitter
@@ -67,9 +57,10 @@ TransmitterSendNetBufferLists (
     );
 
 extern VOID
-TransmitterCompletePackets(
-    IN  PXENNET_TRANSMITTER Transmitter,
-    IN  PLIST_ENTRY         List
+TransmitterReturnPacket(
+    IN  PXENNET_TRANSMITTER                         Transmitter,
+    IN  PVOID                                       Cookie,
+    IN  PXENVIF_TRANSMITTER_PACKET_COMPLETION_INFO  Completion
     );
 
 extern PXENVIF_VIF_OFFLOAD_OPTIONS

@@ -49,15 +49,23 @@ struct _XENNET_RECEIVER {
 #define RECEIVER_POOL_TAG       'RteN'
 #define IN_NDIS_MAX             1024
 
+typedef struct _NET_BUFFER_LIST_RESERVED {
+    PVOID   Cookie;
+} NET_BUFFER_LIST_RESERVED, *PNET_BUFFER_LIST_RESERVED;
+
+C_ASSERT(sizeof (NET_BUFFER_LIST_RESERVED) <= RTL_FIELD_SIZE(NET_BUFFER_LIST, MiniportReserved));
+
 static PNET_BUFFER_LIST
 __ReceiverAllocateNetBufferList(
-    IN  PXENNET_RECEIVER    Receiver,
-    IN  PMDL                Mdl,
-    IN  ULONG               Offset,
-    IN  ULONG               Length
+    IN  PXENNET_RECEIVER        Receiver,
+    IN  PMDL                    Mdl,
+    IN  ULONG                   Offset,
+    IN  ULONG                   Length,
+    IN  PVOID                   Cookie
     )
 {
-    PNET_BUFFER_LIST        NetBufferList;
+    PNET_BUFFER_LIST            NetBufferList;
+    PNET_BUFFER_LIST_RESERVED   ListReserved;
 
     ASSERT3U(KeGetCurrentIrql(), ==, DISPATCH_LEVEL);
     KeAcquireSpinLockAtDpcLevel(&Receiver->Lock);
@@ -90,16 +98,27 @@ __ReceiverAllocateNetBufferList(
 
     KeReleaseSpinLockFromDpcLevel(&Receiver->Lock);
 
+    ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
+    ASSERT3P(ListReserved->Cookie, ==, NULL);
+    ListReserved->Cookie = Cookie;
+
     return NetBufferList;
 }        
 
-static VOID
+static PVOID
 __ReceiverReleaseNetBufferList(
-    IN  PXENNET_RECEIVER    Receiver,
-    IN  PNET_BUFFER_LIST    NetBufferList,
-    IN  BOOLEAN             Cache
+    IN  PXENNET_RECEIVER        Receiver,
+    IN  PNET_BUFFER_LIST        NetBufferList,
+    IN  BOOLEAN                 Cache
     )
 {
+    PNET_BUFFER_LIST_RESERVED   ListReserved;
+    PVOID                       Cookie;
+
+    ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
+    Cookie = ListReserved->Cookie;
+    ListReserved->Cookie = NULL;
+
     if (Cache) {
         PNET_BUFFER_LIST    Old;
         PNET_BUFFER_LIST    New;
@@ -115,72 +134,55 @@ __ReceiverReleaseNetBufferList(
     } else {
         NdisFreeNetBufferList(NetBufferList);
     }
+
+    return Cookie;
 }
 
-static FORCEINLINE ULONG
-__ReceiverReturnNetBufferLists(
+static FORCEINLINE VOID
+__ReceiverReturnNetBufferList(
     IN  PXENNET_RECEIVER    Receiver,
     IN  PNET_BUFFER_LIST    NetBufferList,
     IN  BOOLEAN             Cache
     )
 {
     PXENVIF_VIF_INTERFACE   VifInterface;
-    LIST_ENTRY              List;
-    ULONG                   Count;
+    PVOID                   Cookie;
 
     VifInterface = AdapterGetVifInterface(Receiver->Adapter);
-    InitializeListHead(&List);
 
-    Count = 0;
-    while (NetBufferList != NULL) {
-        PNET_BUFFER_LIST        Next;
-        PNET_BUFFER             NetBuffer;
-        PMDL                    Mdl;
-        PXENVIF_RECEIVER_PACKET Packet;
+    Cookie = __ReceiverReleaseNetBufferList(Receiver, NetBufferList, Cache);
 
-        Next = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
-        NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
+    XENVIF_VIF(ReceiverReturnPacket,
+               VifInterface,
+               Cookie);
 
-        NetBuffer = NET_BUFFER_LIST_FIRST_NB(NetBufferList);
-        ASSERT3P(NET_BUFFER_NEXT_NB(NetBuffer), ==, NULL);
-
-        Mdl = NET_BUFFER_FIRST_MDL(NetBuffer);
-
-        __ReceiverReleaseNetBufferList(Receiver, NetBufferList, Cache);
-
-        Packet = CONTAINING_RECORD(Mdl, XENVIF_RECEIVER_PACKET, Mdl);
-
-        InsertTailList(&List, &Packet->ListEntry);
-
-        Count++;
-        NetBufferList = Next;
-    }
-
-    if (Count != 0)
-        XENVIF_VIF(ReceiverReturnPackets,
-                   VifInterface,
-                   &List);
-
-    return Count;
+    (VOID) InterlockedIncrement(&Receiver->InNDIS);
 }
 
 static PNET_BUFFER_LIST
 __ReceiverReceivePacket(
-    IN  PXENNET_RECEIVER                Receiver,
-    IN  PMDL                            Mdl,
-    IN  ULONG                           Offset,
-    IN  ULONG                           Length,
-    IN  XENVIF_PACKET_CHECKSUM_FLAGS    Flags,
-    IN  USHORT                          TagControlInformation
+    IN  PXENNET_RECEIVER                        Receiver,
+    IN  PMDL                                    Mdl,
+    IN  ULONG                                   Offset,
+    IN  ULONG                                   Length,
+    IN  XENVIF_PACKET_CHECKSUM_FLAGS            Flags,
+    IN  USHORT                                  MaximumSegmentSize,
+    IN  USHORT                                  TagControlInformation,
+    IN  PXENVIF_PACKET_INFO                     Info,
+    IN  PVOID                                   Cookie
     )
 {
     PNET_BUFFER_LIST                            NetBufferList;
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO   csumInfo;
 
+    UNREFERENCED_PARAMETER(Info);
+    UNREFERENCED_PARAMETER(MaximumSegmentSize);
+
     NetBufferList = __ReceiverAllocateNetBufferList(Receiver,
                                                     Mdl,
                                                     Offset,
-                                                    Length);
+                                                    Length,
+                                                    Cookie);
     if (NetBufferList == NULL)
         goto fail1;
 
@@ -216,31 +218,26 @@ __ReceiverReceivePacket(
     return NetBufferList;
 
 fail2:
-    __ReceiverReleaseNetBufferList(Receiver, NetBufferList, TRUE);
+    (VOID) __ReceiverReleaseNetBufferList(Receiver, NetBufferList, TRUE);
 
 fail1:
     return NULL;
 }
 
 static VOID
-__ReceiverPushPackets(
+__ReceiverPushPacket(
     IN  PXENNET_RECEIVER    Receiver,
-    IN  PNET_BUFFER_LIST    NetBufferList,
-    IN  ULONG               Count,
-    IN  BOOLEAN             LowResources
+    IN  PNET_BUFFER_LIST    NetBufferList
     )
 {
     ULONG                   Flags;
     LONG                    InNDIS;
 
-    InNDIS = Receiver->InNDIS;
+    InNDIS = InterlockedIncrement(&Receiver->InNDIS);
 
     Flags = NDIS_RECEIVE_FLAGS_DISPATCH_LEVEL;
-    if (LowResources) {
+    if (InNDIS > IN_NDIS_MAX)
         Flags |= NDIS_RECEIVE_FLAGS_RESOURCES;
-    } else {
-        InNDIS = __InterlockedAdd(&Receiver->InNDIS, Count);
-    }
 
     for (;;) {
         LONG    InNDISMax;
@@ -258,11 +255,11 @@ __ReceiverPushPackets(
     NdisMIndicateReceiveNetBufferLists(AdapterGetHandle(Receiver->Adapter),
                                        NetBufferList,
                                        NDIS_DEFAULT_PORT_NUMBER,
-                                       Count,
+                                       1,
                                        Flags);
 
-    if (LowResources)
-        (VOID) __ReceiverReturnNetBufferLists(Receiver, NetBufferList, FALSE);
+    if (Flags & NDIS_RECEIVE_FLAGS_RESOURCES)
+        (VOID) __ReceiverReturnNetBufferList(Receiver, NetBufferList, FALSE);
 }
 
 NDIS_STATUS
@@ -308,24 +305,6 @@ ReceiverInitialize(
 fail2:
 fail1:
     return status;
-}
-
-NDIS_STATUS
-ReceiverEnable (
-    IN  PXENNET_RECEIVER    Receiver
-    )
-{
-    UNREFERENCED_PARAMETER(Receiver);
-
-    return NDIS_STATUS_SUCCESS;
-}
-
-VOID
-ReceiverDisable (
-    IN  PXENNET_RECEIVER    Receiver
-    )
-{
-    UNREFERENCED_PARAMETER(Receiver);
 }
 
 VOID
@@ -376,92 +355,54 @@ ReceiverReturnNetBufferLists(
     IN  ULONG               ReturnFlags
     )
 {
-    ULONG                   Count;
-
     UNREFERENCED_PARAMETER(ReturnFlags);
 
-    Count = __ReceiverReturnNetBufferLists(Receiver, NetBufferList, TRUE);
-    (VOID) __InterlockedSubtract(&Receiver->InNDIS, Count);
+    while (NetBufferList != NULL) {
+        PNET_BUFFER_LIST        Next;
+
+        Next = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
+        NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
+
+        __ReceiverReturnNetBufferList(Receiver, NetBufferList, TRUE);
+
+        NetBufferList = Next;
+    }
 }
 
 VOID
-ReceiverReceivePackets(
-    IN  PXENNET_RECEIVER    Receiver,
-    IN  PLIST_ENTRY         List
+ReceiverQueuePacket(
+    IN  PXENNET_RECEIVER                Receiver,
+    IN  PMDL                            Mdl,
+    IN  ULONG                           Offset,
+    IN  ULONG                           Length,
+    IN  XENVIF_PACKET_CHECKSUM_FLAGS    Flags,
+    IN  USHORT                          MaximumSegmentSize,
+    IN  USHORT                          TagControlInformation,
+    IN  PXENVIF_PACKET_INFO             Info,
+    IN  PVOID                           Cookie
     )
 {
-    PXENVIF_VIF_INTERFACE   VifInterface;
-    PNET_BUFFER_LIST        HeadNetBufferList;
-    PNET_BUFFER_LIST        *TailNetBufferList;
-    ULONG                   Count;
-    BOOLEAN                 LowResources;
+    PXENVIF_VIF_INTERFACE               VifInterface;
+    PNET_BUFFER_LIST                    NetBufferList;
 
     VifInterface = AdapterGetVifInterface(Receiver->Adapter);
-    LowResources = FALSE;
 
-again:
-    HeadNetBufferList = NULL;
-    TailNetBufferList = &HeadNetBufferList;
-    Count = 0;
+    NetBufferList = __ReceiverReceivePacket(Receiver,
+                                            Mdl,
+                                            Offset,
+                                            Length,
+                                            Flags,
+                                            MaximumSegmentSize,
+                                            TagControlInformation,
+                                            Info,
+                                            Cookie);
 
-    while (!IsListEmpty(List)) {
-        PLIST_ENTRY                     ListEntry;
-        PXENVIF_RECEIVER_PACKET         Packet;
-        PXENVIF_PACKET_INFO             Info;
-        PMDL                            Mdl;
-        ULONG                           Offset;
-        ULONG                           Length;
-        XENVIF_PACKET_CHECKSUM_FLAGS    Flags;
-        USHORT                          TagControlInformation;
-        PNET_BUFFER_LIST                NetBufferList;
-
-        if (!LowResources &&
-            Receiver->InNDIS + Count > IN_NDIS_MAX)
-            break;
-
-        ListEntry = RemoveHeadList(List);
-        ASSERT(ListEntry != List);
-
-        RtlZeroMemory(ListEntry, sizeof (LIST_ENTRY));
-
-        Packet = CONTAINING_RECORD(ListEntry, XENVIF_RECEIVER_PACKET, ListEntry);
-        Mdl = &Packet->Mdl;
-        Offset = Packet->Offset;
-        Length = Packet->Length;
-        Flags = Packet->Flags;
-
-        Info = Packet->Info;
-
-        TagControlInformation = Info->TagControlInformation;
-
-        NetBufferList = __ReceiverReceivePacket(Receiver, Mdl, Offset, Length, Flags, TagControlInformation);
-
-        if (NetBufferList != NULL) {
-            *TailNetBufferList = NetBufferList;
-            TailNetBufferList = &NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
-            Count++;
-        } else {
-            LIST_ENTRY  PacketList;
-
-            InitializeListHead(&PacketList);
-            InsertTailList(&PacketList, &Packet->ListEntry);
-
-            XENVIF_VIF(ReceiverReturnPackets,
-                       VifInterface,
-                       &PacketList);
-        }
-    }
-
-    if (Count != 0) {
-        ASSERT(HeadNetBufferList != NULL);
-
-        __ReceiverPushPackets(Receiver, HeadNetBufferList, Count, LowResources);
-    }
-
-    if (!IsListEmpty(List)) {
-        ASSERT(!LowResources);
-        LowResources = TRUE;
-        goto again;
+    if (NetBufferList != NULL) {
+        __ReceiverPushPacket(Receiver, NetBufferList);
+    } else {
+        XENVIF_VIF(ReceiverReturnPacket,
+                   VifInterface,
+                   Cookie);
     }
 }
 

@@ -45,7 +45,6 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <vif_interface.h>
-#include <cache_interface.h>
 
 #include <tcpip.h>
 #include <version.h>
