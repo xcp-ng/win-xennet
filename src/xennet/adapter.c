@@ -37,7 +37,6 @@
 #include <version.h>
 
 #include <vif_interface.h>
-#include <cache_interface.h>
 #include <store_interface.h>
 #include <suspend_interface.h>
 
@@ -66,7 +65,6 @@ typedef struct _PROPERTIES {
 
 struct _XENNET_ADAPTER {
     XENVIF_VIF_INTERFACE        VifInterface;
-    XENBUS_CACHE_INTERFACE      CacheInterface;
     XENBUS_STORE_INTERFACE      StoreInterface;
     XENBUS_SUSPEND_INTERFACE    SuspendInterface;
 
@@ -195,20 +193,46 @@ AdapterVifCallback(
     va_start(Arguments, Type);
 
     switch (Type) {
-    case XENVIF_TRANSMITTER_RETURN_PACKETS: {
-        PLIST_ENTRY List;
+    case XENVIF_TRANSMITTER_RETURN_PACKET: {
+        PVOID                                       Cookie;
+        PXENVIF_TRANSMITTER_PACKET_COMPLETION_INFO  Completion;
 
-        List = va_arg(Arguments, PLIST_ENTRY);
+        Cookie = va_arg(Arguments, PVOID);
+        Completion = va_arg(Arguments, PXENVIF_TRANSMITTER_PACKET_COMPLETION_INFO);
 
-        TransmitterCompletePackets(Adapter->Transmitter, List);
+        TransmitterReturnPacket(Adapter->Transmitter,
+                                Cookie,
+                                Completion);
         break;
     }
-    case XENVIF_RECEIVER_QUEUE_PACKETS: {
-        PLIST_ENTRY List;
+    case XENVIF_RECEIVER_QUEUE_PACKET: {
+        PMDL                            Mdl;
+        ULONG                           Offset;
+        ULONG                           Length;
+        XENVIF_PACKET_CHECKSUM_FLAGS    Flags;
+        USHORT                          MaximumSegmentSize;
+        USHORT                          TagControlInformation;
+        PXENVIF_PACKET_INFO             Info;
+        PVOID                           Cookie;
 
-        List = va_arg(Arguments, PLIST_ENTRY);
+        Mdl = va_arg(Arguments, PMDL);
+        Offset = va_arg(Arguments, ULONG);
+        Length = va_arg(Arguments, ULONG);
+        Flags = va_arg(Arguments, XENVIF_PACKET_CHECKSUM_FLAGS);
+        MaximumSegmentSize = va_arg(Arguments, USHORT);
+        TagControlInformation = va_arg(Arguments, USHORT);
+        Info = va_arg(Arguments, PXENVIF_PACKET_INFO);
+        Cookie = va_arg(Arguments, PVOID);
 
-        ReceiverReceivePackets(Adapter->Receiver, List);
+        ReceiverQueuePacket(Adapter->Receiver,
+                            Mdl,
+                            Offset,
+                            Length,
+                            Flags,
+                            MaximumSegmentSize,
+                            TagControlInformation,
+                            Info,
+                            Cookie);
         break;
     }
     case XENVIF_MAC_STATE_CHANGE: {
@@ -1050,14 +1074,6 @@ AdapterGetVifInterface(
     return &Adapter->VifInterface;
 }
 
-PXENBUS_CACHE_INTERFACE
-AdapterGetCacheInterface(
-    IN  PXENNET_ADAPTER     Adapter
-    )
-{
-    return &Adapter->CacheInterface;
-}
-
 PXENNET_TRANSMITTER
 AdapterGetTransmitter(
     IN  PXENNET_ADAPTER     Adapter
@@ -1469,41 +1485,27 @@ AdapterEnable(
     )
 {
     NTSTATUS                status;
-    NDIS_STATUS             ndisStatus;
 
     ASSERT(!Adapter->Enabled);
-
-    status = XENBUS_CACHE(Acquire,
-                          &Adapter->CacheInterface);
-    if (!NT_SUCCESS(status))
-        goto fail1;
 
     status = XENBUS_STORE(Acquire,
                           &Adapter->StoreInterface);
     if (!NT_SUCCESS(status))
-        goto fail2;
+        goto fail1;
 
     status = XENBUS_SUSPEND(Acquire,
                             &Adapter->SuspendInterface);
     if (!NT_SUCCESS(status))
-        goto fail3;
+        goto fail2;
 
     (VOID) AdapterSetDistribution(Adapter);
-
-    ndisStatus = TransmitterEnable(Adapter->Transmitter);
-    if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail4;
-
-    ndisStatus = ReceiverEnable(Adapter->Receiver);
-    if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail5;
 
     status = XENVIF_VIF(Enable,
                         &Adapter->VifInterface,
                         AdapterVifCallback,
                         Adapter);
     if (!NT_SUCCESS(status))
-        goto fail6;
+        goto fail3;
 
     AdapterMediaStateChange(Adapter);
 
@@ -1511,22 +1513,13 @@ AdapterEnable(
 
     return NDIS_STATUS_SUCCESS;
 
-fail6:
-    ReceiverDisable(Adapter->Receiver);
-
-fail5:
-    TransmitterDisable(Adapter->Transmitter);
-
-fail4:
+fail3:
     AdapterClearDistribution(Adapter);
 
     XENBUS_SUSPEND(Release, &Adapter->SuspendInterface);
 
-fail3:
-    XENBUS_STORE(Release, &Adapter->StoreInterface);
-
 fail2:
-    XENBUS_CACHE(Release, &Adapter->CacheInterface);
+    XENBUS_STORE(Release, &Adapter->StoreInterface);
 
 fail1:
     return NDIS_STATUS_FAILURE;
@@ -1545,14 +1538,10 @@ AdapterDisable(
 
     AdapterMediaStateChange(Adapter);
 
-    ReceiverDisable(Adapter->Receiver);
-    TransmitterDisable(Adapter->Transmitter);
-
     AdapterClearDistribution(Adapter);
 
     XENBUS_SUSPEND(Release, &Adapter->SuspendInterface);
     XENBUS_STORE(Release, &Adapter->StoreInterface);
-    XENBUS_CACHE(Release, &Adapter->CacheInterface);
 }
 
 VOID
@@ -2779,22 +2768,13 @@ AdapterInitialize(
         goto fail2;
 
     status = __QueryInterface(DeviceObject,
-                              &GUID_XENBUS_CACHE_INTERFACE,
-                              XENBUS_CACHE_INTERFACE_VERSION_MAX,
-                              (PINTERFACE)&(*Adapter)->CacheInterface,
-                              sizeof(XENBUS_CACHE_INTERFACE),
-                              FALSE);
-    if (!NT_SUCCESS(status))
-        goto fail3;
-
-    status = __QueryInterface(DeviceObject,
                               &GUID_XENBUS_STORE_INTERFACE,
                               XENBUS_STORE_INTERFACE_VERSION_MAX,
                               (PINTERFACE)&(*Adapter)->StoreInterface,
                               sizeof(XENBUS_STORE_INTERFACE),
                               FALSE);
     if (!NT_SUCCESS(status))
-        goto fail4;
+        goto fail3;
 
     status = __QueryInterface(DeviceObject,
                               &GUID_XENBUS_SUSPEND_INTERFACE,
@@ -2803,42 +2783,42 @@ AdapterInitialize(
                               sizeof(XENBUS_SUSPEND_INTERFACE),
                               FALSE);
     if (!NT_SUCCESS(status))
-        goto fail5;
+        goto fail4;
 
     status = XENVIF_VIF(Acquire,
                         &(*Adapter)->VifInterface);
     if (!NT_SUCCESS(status))
-        goto fail6;
+        goto fail5;
 
     (*Adapter)->NdisAdapterHandle = Handle;
 
     ndisStatus = TransmitterInitialize(*Adapter, &(*Adapter)->Transmitter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail7;
+        goto fail6;
 
     ndisStatus = ReceiverInitialize(*Adapter, &(*Adapter)->Receiver);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail8;
+        goto fail7;
 
     ndisStatus = AdapterGetAdvancedSettings(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail9;
+        goto fail8;
 
     ndisStatus = AdapterSetRegistrationAttributes(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail10;
+        goto fail9;
 
     ndisStatus = AdapterSetGeneralAttributes(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail11;
+        goto fail10;
 
     ndisStatus = AdapterSetOffloadAttributes(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail12;
+        goto fail11;
 
     ndisStatus = AdapterSetHeaderDataSplitAttributes(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail13;
+        goto fail12;
 
     RtlZeroMemory(&Dma, sizeof(NDIS_SG_DMA_DESCRIPTION));
     Dma.Header.Type = NDIS_OBJECT_TYPE_SG_DMA_DESCRIPTION;
@@ -2857,31 +2837,28 @@ AdapterInitialize(
 
     return NDIS_STATUS_SUCCESS;
 
-fail13:
 fail12:
 fail11:
 fail10:
 fail9:
+fail8:
     ReceiverTeardown((*Adapter)->Receiver);
     (*Adapter)->Receiver = NULL;
 
-fail8:
+fail7:
     TransmitterTeardown((*Adapter)->Transmitter);
     (*Adapter)->Transmitter = NULL;
 
-fail7:
+fail6:
     (*Adapter)->NdisAdapterHandle = NULL;
 
     XENVIF_VIF(Release, &(*Adapter)->VifInterface);
 
-fail6:
+fail5:
     RtlZeroMemory(&(*Adapter)->SuspendInterface, sizeof(XENBUS_SUSPEND_INTERFACE));
 
-fail5:
-    RtlZeroMemory(&(*Adapter)->StoreInterface, sizeof(XENBUS_STORE_INTERFACE));
-
 fail4:
-    RtlZeroMemory(&(*Adapter)->CacheInterface, sizeof(XENBUS_CACHE_INTERFACE));
+    RtlZeroMemory(&(*Adapter)->StoreInterface, sizeof(XENBUS_STORE_INTERFACE));
 
 fail3:
     RtlZeroMemory(&(*Adapter)->VifInterface, sizeof(XENVIF_VIF_INTERFACE));
@@ -2914,7 +2891,6 @@ AdapterTeardown(
 
     RtlZeroMemory(&Adapter->SuspendInterface, sizeof(XENBUS_SUSPEND_INTERFACE));
     RtlZeroMemory(&Adapter->StoreInterface, sizeof(XENBUS_STORE_INTERFACE));
-    RtlZeroMemory(&Adapter->CacheInterface, sizeof(XENBUS_CACHE_INTERFACE));
     RtlZeroMemory(&Adapter->VifInterface, sizeof(XENVIF_VIF_INTERFACE));
 
     __AdapterFree(Adapter);

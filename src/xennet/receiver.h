@@ -43,16 +43,6 @@ ReceiverInitialize(
     OUT PXENNET_RECEIVER    *Receiver
     );
 
-extern NDIS_STATUS
-ReceiverEnable(
-    IN  PXENNET_RECEIVER    Receiver
-    );
-
-extern VOID
-ReceiverDisable(
-    IN  PXENNET_RECEIVER    Receiver
-    );
-
 extern VOID
 ReceiverTeardown(
     IN  PXENNET_RECEIVER    Receiver
@@ -66,9 +56,16 @@ ReceiverReturnNetBufferLists(
     );
 
 extern VOID
-ReceiverReceivePackets(
-    IN  PXENNET_RECEIVER    Receiver,
-    IN  PLIST_ENTRY         List
+ReceiverQueuePacket(
+    IN  PXENNET_RECEIVER                Receiver,
+    IN  PMDL                            Mdl,
+    IN  ULONG                           Offset,
+    IN  ULONG                           Length,
+    IN  XENVIF_PACKET_CHECKSUM_FLAGS    Flags,
+    IN  USHORT                          MaximumSegmentSize,
+    IN  USHORT                          TagControlInformation,
+    IN  PXENVIF_PACKET_INFO             Info,
+    IN  PVOID                           Cookie
     );
 
 extern PXENVIF_VIF_OFFLOAD_OPTIONS
