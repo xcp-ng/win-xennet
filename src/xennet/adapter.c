@@ -1380,8 +1380,15 @@ AdapterSuspendCallbackLate(
     )
 {
     PXENNET_ADAPTER Adapter = Argument;
+    LONG            Count;
 
-    (VOID) __AdapterSetDistribution(Adapter);
+    (VOID) InterlockedDecrement(&AdapterCount);
+
+    Count = InterlockedIncrement(&AdapterCount);
+    ASSERT(Count != 0);
+
+    if (Count == 1)
+        (VOID) __AdapterSetDistribution(Adapter);
 }
 
 static NTSTATUS
@@ -1397,12 +1404,8 @@ AdapterSetDistribution(
     Count = InterlockedIncrement(&AdapterCount);
     ASSERT(Count != 0);
 
-    if (Count != 1)
-        goto done;
-
-    status = __AdapterSetDistribution(Adapter);
-    if (!NT_SUCCESS(status))
-        goto fail1;
+    if (Count == 1)
+        (VOID) __AdapterSetDistribution(Adapter);
 
     status = XENBUS_SUSPEND(Register,
                             &Adapter->SuspendInterface,
@@ -1411,19 +1414,18 @@ AdapterSetDistribution(
                             Adapter,
                             &Adapter->SuspendCallbackLate);
     if (!NT_SUCCESS(status))
-        goto fail2;
+        goto fail1;
 
-done:
     Trace("<====\n");
     return STATUS_SUCCESS;
 
-fail2:
-    Error("fail2\n");
-
-    __AdapterClearDistribution(Adapter);
-
 fail1:
     Error("fail1 (%08x)\n", status);
+
+    Count = InterlockedDecrement(&AdapterCount);
+
+    if (Count == 0)
+        __AdapterClearDistribution(Adapter);
 
     return status;
 }
@@ -1437,19 +1439,16 @@ AdapterClearDistribution(
 
     Trace("====>\n");
 
-    Count = InterlockedDecrement(&AdapterCount);
-
-    if (Count != 0)
-        goto done;
-
     XENBUS_SUSPEND(Deregister,
                    &Adapter->SuspendInterface,
                    Adapter->SuspendCallbackLate);
     Adapter->SuspendCallbackLate = NULL;
 
-    __AdapterClearDistribution(Adapter);
+    Count = InterlockedDecrement(&AdapterCount);
 
-done:
+    if (Count == 0)
+        __AdapterClearDistribution(Adapter);
+
     Trace("<====\n");
 }
 
@@ -1472,14 +1471,16 @@ AdapterEnable(
     if (!NT_SUCCESS(status))
         goto fail2;
 
-    (VOID) AdapterSetDistribution(Adapter);
+    status = AdapterSetDistribution(Adapter);
+    if (!NT_SUCCESS(status))
+        goto fail3;
 
     status = XENVIF_VIF(Enable,
                         &Adapter->VifInterface,
                         AdapterVifCallback,
                         Adapter);
     if (!NT_SUCCESS(status))
-        goto fail3;
+        goto fail4;
 
     AdapterMediaStateChange(Adapter);
 
@@ -1487,9 +1488,10 @@ AdapterEnable(
 
     return NDIS_STATUS_SUCCESS;
 
-fail3:
+fail4:
     AdapterClearDistribution(Adapter);
 
+fail3:
     XENBUS_SUSPEND(Release, &Adapter->SuspendInterface);
 
 fail2:
