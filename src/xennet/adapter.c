@@ -1095,7 +1095,7 @@ __AdapterAllocate(
     IN  ULONG   Length
     )
 {
-    return __AllocateNonPagedPoolWithTag(Length, ADAPTER_POOL_TAG);
+    return __AllocatePoolWithTag(NonPagedPool, Length, ADAPTER_POOL_TAG);
 }
 
 static FORCEINLINE VOID
@@ -1127,7 +1127,7 @@ __AdapterMultiSzToUpcaseAnsi(
             if (Buffer[Index] == '\0')
                 break;
         } else {
-            Buffer[Index] = (CHAR)toupper(Buffer[Index]);
+            Buffer[Index] = __toupper(Buffer[Index]);
             Index++;
         }
     }

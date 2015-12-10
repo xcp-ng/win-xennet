@@ -30,9 +30,9 @@
  */
 
 #include <ndis.h>
-#include <util.h>
 #include <tcpip.h>
 
+#include "util.h"
 #include "receiver.h"
 #include "adapter.h"
 #include "dbg_print.h"
