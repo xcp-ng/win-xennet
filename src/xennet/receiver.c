@@ -29,9 +29,13 @@
  * SUCH DAMAGE.
  */
 
+
+#include <ndis.h>
+#include <tcpip.h>
+
+#include "util.h"
 #include "receiver.h"
 #include "adapter.h"
-#include <util.h>
 #include "dbg_print.h"
 #include "assert.h"
 
