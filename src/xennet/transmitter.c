@@ -252,21 +252,27 @@ TransmitterSendNetBufferLists(
         while (NetBuffer != NULL) {
             PVOID               Cookie = NetBufferList;
             XENVIF_PACKET_HASH  Hash;
+            NTSTATUS            status;
 
             ListReserved->Reference++;
 
             Hash.Algorithm = XENVIF_PACKET_HASH_ALGORITHM_NONE;
 
-            XENVIF_VIF(TransmitterQueuePacket,
-                       AdapterGetVifInterface(Transmitter->Adapter),
-                       NET_BUFFER_CURRENT_MDL(NetBuffer),
-                       NET_BUFFER_CURRENT_MDL_OFFSET(NetBuffer),
-                       NET_BUFFER_DATA_LENGTH(NetBuffer),
-                       OffloadOptions,
-                       MaximumSegmentSize,
-                       TagControlInformation,
-                       &Hash,
-                       Cookie);
+            status = XENVIF_VIF(TransmitterQueuePacket,
+                                AdapterGetVifInterface(Transmitter->Adapter),
+                                NET_BUFFER_CURRENT_MDL(NetBuffer),
+                                NET_BUFFER_CURRENT_MDL_OFFSET(NetBuffer),
+                                NET_BUFFER_DATA_LENGTH(NetBuffer),
+                                OffloadOptions,
+                                MaximumSegmentSize,
+                                TagControlInformation,
+                                &Hash,
+                                Cookie);
+            if (!NT_SUCCESS(status)) {
+                __TransmitterReturnPacket(Transmitter, Cookie,
+                                          NDIS_STATUS_NOT_ACCEPTED);
+                break;
+            }
 
             NetBuffer = NET_BUFFER_NEXT_NB(NetBuffer);
         }
