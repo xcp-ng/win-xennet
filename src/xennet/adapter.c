@@ -246,6 +246,7 @@ AdapterVifCallback(
 
 #define DISPLAY_OFFLOAD(_Offload)                                   \
         do {                                                        \
+            Info("%s\n", #_Offload);                                \
             if ((_Offload).Checksum.IPv4Receive.IpChecksum)         \
                 Info("Checksum.IPv4Receive.IpChecksum ON\n");       \
             else                                                    \
@@ -322,10 +323,10 @@ AdapterIndicateOffloadChanged(
     RxOptions = ReceiverOffloadOptions(Adapter->Receiver);
     TxOptions = TransmitterOffloadOptions(Adapter->Transmitter);
 
-    RtlZeroMemory(&Offload, sizeof(NDIS_OFFLOAD));
+    RtlZeroMemory(&Offload, sizeof(Offload));
     Offload.Header.Type = NDIS_OBJECT_TYPE_OFFLOAD;
-    Offload.Header.Revision = NDIS_OFFLOAD_REVISION_1;
-    Offload.Header.Size = sizeof(NDIS_OFFLOAD);
+    Offload.Header.Revision = NDIS_OFFLOAD_REVISION_2;
+    Offload.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_2;
 
     Offload.Checksum.IPv4Receive.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
 
@@ -401,18 +402,17 @@ AdapterIndicateOffloadChanged(
         Offload.LsoV2.IPv6.TcpOptionsSupported = 1;
     }
 
-    if (!RtlEqualMemory(&Adapter->Offload, &Offload, sizeof(NDIS_OFFLOAD))) {
-        Adapter->Offload = Offload;
-        DISPLAY_OFFLOAD(Offload);
-    }
+    DISPLAY_OFFLOAD(Offload);
 
-    RtlZeroMemory(&Status, sizeof(NDIS_STATUS_INDICATION));
+    Adapter->Offload = Offload;
+
+    RtlZeroMemory(&Status, sizeof(Status));
     Status.Header.Type = NDIS_OBJECT_TYPE_STATUS_INDICATION;
     Status.Header.Revision = NDIS_STATUS_INDICATION_REVISION_1;
-    Status.Header.Size = sizeof(NDIS_STATUS_INDICATION);
+    Status.Header.Size = NDIS_SIZEOF_STATUS_INDICATION_REVISION_1;
     Status.StatusCode = NDIS_STATUS_TASK_OFFLOAD_CURRENT_CONFIG;
     Status.StatusBuffer = &Offload;
-    Status.StatusBufferSize = sizeof(Offload);
+    Status.StatusBufferSize = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_2;
 
     NdisMIndicateStatusEx(Adapter->NdisAdapterHandle, &Status);
 }
@@ -1045,7 +1045,7 @@ AdapterInterruptModeration(
 
     Params->Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
     Params->Header.Revision = NDIS_INTERRUPT_MODERATION_PARAMETERS_REVISION_1;
-    Params->Header.Size = sizeof(NDIS_INTERRUPT_MODERATION_PARAMETERS);
+    Params->Header.Size = NDIS_SIZEOF_INTERRUPT_MODERATION_PARAMETERS_REVISION_1;
 
     Params->Flags = 0;
     Params->InterruptModeration = NdisInterruptModerationNotSupported;
@@ -1554,10 +1554,10 @@ AdapterMediaStateChange(
     NDIS_LINK_STATE         LinkState;
     NDIS_STATUS_INDICATION  StatusIndication;
 
-    RtlZeroMemory(&LinkState, sizeof (NDIS_LINK_STATE));
+    RtlZeroMemory(&LinkState, sizeof(LinkState));
     LinkState.Header.Revision = NDIS_LINK_STATE_REVISION_1;
     LinkState.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
-    LinkState.Header.Size = sizeof(NDIS_LINK_STATE);
+    LinkState.Header.Size = NDIS_SIZEOF_LINK_STATE_REVISION_1;
 
     XENVIF_VIF(MacQueryState,
                &Adapter->VifInterface,
@@ -1582,10 +1582,10 @@ AdapterMediaStateChange(
 
     LinkState.XmitLinkSpeed = LinkState.RcvLinkSpeed;
 
-    RtlZeroMemory(&StatusIndication, sizeof (NDIS_STATUS_INDICATION));
+    RtlZeroMemory(&StatusIndication, sizeof(StatusIndication));
     StatusIndication.Header.Type = NDIS_OBJECT_TYPE_STATUS_INDICATION;
     StatusIndication.Header.Revision = NDIS_STATUS_INDICATION_REVISION_1;
-    StatusIndication.Header.Size = sizeof (NDIS_STATUS_INDICATION);
+    StatusIndication.Header.Size = NDIS_SIZEOF_STATUS_INDICATION_REVISION_1;
 
     StatusIndication.SourceHandle = Adapter->NdisAdapterHandle;
     StatusIndication.StatusCode = NDIS_STATUS_LINK_STATE;
@@ -2291,7 +2291,7 @@ __QueryInterface(
     ASSERT3U(KeGetCurrentIrql(), ==, PASSIVE_LEVEL);
 
     KeInitializeEvent(&Event, NotificationEvent, FALSE);
-    RtlZeroMemory(&StatusBlock, sizeof(IO_STATUS_BLOCK));
+    RtlZeroMemory(&StatusBlock, sizeof(StatusBlock));
 
     Irp = IoBuildSynchronousFsdRequest(IRP_MJ_PNP,
                                        DeviceObject,
@@ -2359,6 +2359,8 @@ fail1:
             field = _Data->ParameterData.IntegerData;   \
         else                                            \
             field = defaultval;                         \
+                                                        \
+        Info("%ws = %d\n", name, field);                \
     } while (FALSE);
 
 static NDIS_STATUS
@@ -2370,10 +2372,10 @@ AdapterGetAdvancedSettings(
     NDIS_HANDLE                 Handle;
     NDIS_STATUS                 ndisStatus;
 
-    RtlZeroMemory(&Config, sizeof(NDIS_CONFIGURATION_OBJECT));
+    RtlZeroMemory(&Config, sizeof(Config));
     Config.Header.Type = NDIS_OBJECT_TYPE_CONFIGURATION_OBJECT;
     Config.Header.Revision = NDIS_CONFIGURATION_OBJECT_REVISION_1;
-    Config.Header.Size = sizeof(NDIS_CONFIGURATION_OBJECT);
+    Config.Header.Size = NDIS_SIZEOF_CONFIGURATION_OBJECT_REVISION_1;
     Config.NdisHandle = Adapter->NdisAdapterHandle;
     Config.Flags = 0;
 
@@ -2413,10 +2415,10 @@ AdapterSetRegistrationAttributes(
     NDIS_MINIPORT_ADAPTER_REGISTRATION_ATTRIBUTES   Attribs;
     NDIS_STATUS                                     ndisStatus;
 
-    RtlZeroMemory(&Attribs, sizeof(NDIS_MINIPORT_ADAPTER_REGISTRATION_ATTRIBUTES));
+    RtlZeroMemory(&Attribs, sizeof(Attribs));
     Attribs.Header.Type = NDIS_OBJECT_TYPE_MINIPORT_ADAPTER_REGISTRATION_ATTRIBUTES;
     Attribs.Header.Revision = NDIS_MINIPORT_ADAPTER_REGISTRATION_ATTRIBUTES_REVISION_1;
-    Attribs.Header.Size = sizeof(NDIS_MINIPORT_ADAPTER_REGISTRATION_ATTRIBUTES);
+    Attribs.Header.Size = NDIS_SIZEOF_MINIPORT_ADAPTER_REGISTRATION_ATTRIBUTES_REVISION_1;
     Attribs.MiniportAdapterContext = (NDIS_HANDLE)Adapter;
     Attribs.AttributeFlags = NDIS_MINIPORT_ATTRIBUTES_BUS_MASTER |
                              NDIS_MINIPORT_ATTRIBUTES_NO_HALT_ON_SUSPEND;
@@ -2437,7 +2439,7 @@ AdapterSetGeneralAttributes(
     NDIS_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES    Attribs;
     NDIS_STATUS                                 ndisStatus;
 
-    RtlZeroMemory(&Attribs, sizeof(NDIS_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES));
+    RtlZeroMemory(&Attribs, sizeof(Attribs));
     Attribs.Header.Type = NDIS_OBJECT_TYPE_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES;
     Attribs.Header.Revision = NDIS_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES_REVISION_1;
     Attribs.Header.Size = sizeof(NDIS_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES);
@@ -2545,10 +2547,10 @@ AdapterSetOffloadAttributes(
                &Adapter->VifInterface,
                &Options);
 
-    RtlZeroMemory(&Supported, sizeof(NDIS_OFFLOAD));
+    RtlZeroMemory(&Supported, sizeof(Supported));
     Supported.Header.Type = NDIS_OBJECT_TYPE_OFFLOAD;
-    Supported.Header.Revision = NDIS_OFFLOAD_REVISION_1;
-    Supported.Header.Size = sizeof(NDIS_OFFLOAD);
+    Supported.Header.Revision = NDIS_OFFLOAD_REVISION_2;
+    Supported.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_2;
 
     Supported.Checksum.IPv4Receive.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
 
@@ -2616,6 +2618,8 @@ AdapterSetOffloadAttributes(
         Supported.LsoV2.IPv6.TcpOptionsSupported = 1;
     }
 
+    DISPLAY_OFFLOAD(Supported);
+
     Default = Supported;
 
     if (!(Adapter->Properties.ipv4_csum & 2))
@@ -2658,15 +2662,14 @@ AdapterSetOffloadAttributes(
         Default.LsoV2.IPv6.MinSegmentCount = 0;
     }
 
-    if (!RtlEqualMemory(&Adapter->Offload, &Default, sizeof (NDIS_OFFLOAD))) {
-        Adapter->Offload = Default;
-        DISPLAY_OFFLOAD(Default);
-    }
+    DISPLAY_OFFLOAD(Default);
 
-    RtlZeroMemory(&Attribs, sizeof(NDIS_MINIPORT_ADAPTER_OFFLOAD_ATTRIBUTES));
+    Adapter->Offload = Default;
+
+    RtlZeroMemory(&Attribs, sizeof(Attribs));
     Attribs.Header.Type = NDIS_OBJECT_TYPE_MINIPORT_ADAPTER_OFFLOAD_ATTRIBUTES;
     Attribs.Header.Revision = NDIS_MINIPORT_ADAPTER_OFFLOAD_ATTRIBUTES_REVISION_1;
-    Attribs.Header.Size = sizeof(Attribs);
+    Attribs.Header.Size = NDIS_SIZEOF_MINIPORT_ADAPTER_OFFLOAD_ATTRIBUTES_REVISION_1;
     Attribs.DefaultOffloadConfiguration = &Default;
     Attribs.HardwareOffloadCapabilities = &Supported;
 
@@ -2825,7 +2828,7 @@ AdapterInitialize(
     RtlZeroMemory(&Dma, sizeof(NDIS_SG_DMA_DESCRIPTION));
     Dma.Header.Type = NDIS_OBJECT_TYPE_SG_DMA_DESCRIPTION;
     Dma.Header.Revision = NDIS_SG_DMA_DESCRIPTION_REVISION_1;
-    Dma.Header.Size = sizeof(NDIS_SG_DMA_DESCRIPTION);
+    Dma.Header.Size = NDIS_SIZEOF_SG_DMA_DESCRIPTION_REVISION_1;
     Dma.Flags = NDIS_SG_DMA_64_BIT_ADDRESS;
     Dma.MaximumPhysicalMapping = 65536;
     Dma.ProcessSGListHandler = AdapterProcessSGList;
