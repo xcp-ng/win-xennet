@@ -89,6 +89,8 @@ __ReceiverAllocateNetBufferList(
         NET_BUFFER_DATA_OFFSET(NetBuffer) = Offset;
         NET_BUFFER_DATA_LENGTH(NetBuffer) = Length;
         NET_BUFFER_CURRENT_MDL_OFFSET(NetBuffer) = Offset;
+
+        ASSERT3P(NET_BUFFER_NEXT_NB(NetBuffer), ==, NULL);
     } else {
         NetBufferList = NdisAllocateNetBufferAndNetBufferList(Receiver->NetBufferListPool,
                                                               0,
