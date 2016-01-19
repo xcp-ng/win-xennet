@@ -60,7 +60,6 @@ typedef struct _PROPERTIES {
     int lsov6;
     int lrov4;
     int lrov6;
-    ULONG HeaderDataSplit;
 } PROPERTIES, *PPROPERTIES;
 
 struct _XENNET_ADAPTER {
@@ -139,7 +138,6 @@ static NDIS_OID XennetSupportedOids[] =
     OID_PNP_CAPABILITIES,
     OID_PNP_QUERY_POWER,
     OID_PNP_SET_POWER,
-    OID_GEN_HD_SPLIT_PARAMETERS,
 };
 
 #define ADAPTER_POOL_TAG    'AteN'
@@ -561,6 +559,7 @@ AdapterGetOffloadEncapsulation(
         TxOptions->OffloadIpVersion6UdpChecksum = 1;
 
     RxOptions = ReceiverOffloadOptions(Adapter->Receiver);
+
     RxOptions->Value = 0;
     RxOptions->OffloadTagManipulation = 1;
 
@@ -670,18 +669,6 @@ invalid_parameter:
 #undef RX_ENABLED
 #undef TX_ENABLED
 #undef CHANGE
-
-static NDIS_STATUS
-AdapterGetHeaderDataSplitParameters(
-    IN  PXENNET_ADAPTER             Adapter,
-    IN  PNDIS_HD_SPLIT_PARAMETERS   Split
-    )
-{
-    if (Split->HDSplitCombineFlags == NDIS_HD_SPLIT_COMBINE_ALL_HEADERS)
-        ReceiverSplitHeaderData(Adapter->Receiver, 0);
-
-    return NDIS_STATUS_SUCCESS;
-}
 
 static NDIS_STATUS
 AdapterQueryGeneralStatistics(
@@ -1693,16 +1680,6 @@ AdapterSetInformation(
         }
         break;
 
-    case OID_GEN_HD_SPLIT_PARAMETERS:
-        BytesNeeded = sizeof(NDIS_HD_SPLIT_PARAMETERS);
-        if (BufferLength >= BytesNeeded) {
-            ndisStatus = AdapterGetHeaderDataSplitParameters(Adapter,
-                                                             (PNDIS_HD_SPLIT_PARAMETERS)Buffer);
-            if (ndisStatus == NDIS_STATUS_SUCCESS)
-                BytesRead = sizeof(NDIS_HD_SPLIT_PARAMETERS);
-        }
-        break;
-
     case OID_GEN_INTERRUPT_MODERATION:
     case OID_GEN_MACHINE_NAME:
         Warn = FALSE;
@@ -2393,7 +2370,6 @@ AdapterGetAdvancedSettings(
     READ_PROPERTY(Adapter->Properties.lrov4, L"LROIPv4", 1, Handle);
     READ_PROPERTY(Adapter->Properties.lrov6, L"LROIPv6", 1, Handle);
     READ_PROPERTY(Adapter->Properties.need_csum_value, L"NeedChecksumValue", 1, Handle);
-    READ_PROPERTY(Adapter->Properties.HeaderDataSplit, L"*HeaderDataSplit", 1, Handle);
 
     NdisCloseConfiguration(Handle);
 
@@ -2678,63 +2654,6 @@ AdapterSetOffloadAttributes(
     return ndisStatus;
 }
 
-static NDIS_STATUS
-AdapterSetHeaderDataSplitAttributes(
-    IN  PXENNET_ADAPTER                                 Adapter
-    )
-{
-    NDIS_MINIPORT_ADAPTER_HARDWARE_ASSIST_ATTRIBUTES    Attribs;
-    NDIS_HD_SPLIT_ATTRIBUTES                            Split;
-    NDIS_STATUS                                         NdisStatus;
-
-    RtlZeroMemory(&Attribs, sizeof(Attribs));
-
-    Attribs.Header.Type = NDIS_OBJECT_TYPE_MINIPORT_ADAPTER_HARDWARE_ASSIST_ATTRIBUTES;
-    Attribs.Header.Revision = NDIS_MINIPORT_ADAPTER_HARDWARE_ASSIST_ATTRIBUTES_REVISION_1;
-    Attribs.Header.Size = NDIS_SIZEOF_MINIPORT_ADAPTER_HARDWARE_ASSIST_ATTRIBUTES_REVISION_1;
-
-    RtlZeroMemory(&Split, sizeof(Split));
-
-    Split.Header.Type = NDIS_OBJECT_TYPE_HD_SPLIT_ATTRIBUTES;
-    Split.Header.Revision = NDIS_HD_SPLIT_ATTRIBUTES_REVISION_1;
-    Split.Header.Size = NDIS_SIZEOF_HD_SPLIT_ATTRIBUTES_REVISION_1;
-    Split.HardwareCapabilities =
-        NDIS_HD_SPLIT_CAPS_SUPPORTS_HEADER_DATA_SPLIT |
-        NDIS_HD_SPLIT_CAPS_SUPPORTS_IPV4_OPTIONS |
-        NDIS_HD_SPLIT_CAPS_SUPPORTS_IPV6_EXTENSION_HEADERS |
-        NDIS_HD_SPLIT_CAPS_SUPPORTS_TCP_OPTIONS;
-
-    if (Adapter->Properties.HeaderDataSplit != 0)
-        Split.CurrentCapabilities = Split.HardwareCapabilities;
-
-    Attribs.HDSplitAttributes = &Split;
-
-    NdisStatus = NdisMSetMiniportAttributes(Adapter->NdisAdapterHandle,
-                                            (PNDIS_MINIPORT_ADAPTER_ATTRIBUTES)&Attribs);
-    if (NdisStatus != NDIS_STATUS_SUCCESS)
-        goto fail1;
-
-    if (Split.HDSplitFlags == NDIS_HD_SPLIT_ENABLE_HEADER_DATA_SPLIT) {
-        ASSERT(Split.CurrentCapabilities & NDIS_HD_SPLIT_CAPS_SUPPORTS_HEADER_DATA_SPLIT);
-
-        Info("BackfillSize = %u\n", Split.BackfillSize);
-        Info("MaxHeaderSize = %u\n", Split.MaxHeaderSize);
-
-        XENVIF_VIF(ReceiverSetBackfillSize,
-                   &Adapter->VifInterface,
-                   Split.BackfillSize);
-
-        ReceiverSplitHeaderData(Adapter->Receiver, Split.MaxHeaderSize);
-    }
-
-    return NDIS_STATUS_SUCCESS;
-
-fail1:
-    Error("fail1 (%08x)\n", NdisStatus);
-
-    return NdisStatus;
-}
-
 NDIS_STATUS
 AdapterInitialize(
     IN  NDIS_HANDLE         Handle,
@@ -2821,10 +2740,6 @@ AdapterInitialize(
     if (ndisStatus != NDIS_STATUS_SUCCESS)
         goto fail11;
 
-    ndisStatus = AdapterSetHeaderDataSplitAttributes(*Adapter);
-    if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail12;
-
     RtlZeroMemory(&Dma, sizeof(NDIS_SG_DMA_DESCRIPTION));
     Dma.Header.Type = NDIS_OBJECT_TYPE_SG_DMA_DESCRIPTION;
     Dma.Header.Revision = NDIS_SG_DMA_DESCRIPTION_REVISION_1;
@@ -2842,7 +2757,6 @@ AdapterInitialize(
 
     return NDIS_STATUS_SUCCESS;
 
-fail12:
 fail11:
 fail10:
 fail9:

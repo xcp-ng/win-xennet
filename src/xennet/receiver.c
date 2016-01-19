@@ -47,7 +47,6 @@ struct _XENNET_RECEIVER {
     LONG                        InNDIS;
     LONG                        InNDISMax;
     XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
-    ULONG                       MaxHeaderSize;
 };
 
 #define RECEIVER_POOL_TAG       'RteN'
@@ -177,10 +176,10 @@ __ReceiverReceivePacket(
     )
 {
     PNET_BUFFER_LIST                            NetBufferList;
-    PNET_BUFFER                                 NetBuffer;
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO   csumInfo;
 
     UNREFERENCED_PARAMETER(MaximumSegmentSize);
+    UNREFERENCED_PARAMETER(Info);
 
     NetBufferList = __ReceiverAllocateNetBufferList(Receiver,
                                                     Mdl,
@@ -189,8 +188,6 @@ __ReceiverReceivePacket(
                                                     Cookie);
     if (NetBufferList == NULL)
         goto fail1;
-
-    NetBuffer = NET_BUFFER_LIST_FIRST_NB(NetBufferList);
 
     NetBufferList->SourceHandle = AdapterGetHandle(Receiver->Adapter);
 
@@ -219,48 +216,6 @@ __ReceiverReceivePacket(
             goto fail2;
 
         NET_BUFFER_LIST_INFO(NetBufferList, Ieee8021QNetBufferListInfo) = Ieee8021QInfo.Value;
-    }
-
-    if (Info->IpHeader.Offset != 0) {
-        ULONG                   NblFlags;
-        PUCHAR                  InfoVa;
-        PIP_HEADER              IpHeader;
-        NDIS_PHYSICAL_ADDRESS   DataPhysicalAddress;
-
-        NblFlags = NET_BUFFER_LIST_NBL_FLAGS(NetBufferList);
-
-        InfoVa = MmGetSystemAddressForMdlSafe(Mdl, NormalPagePriority);
-        ASSERT(InfoVa != NULL);
-        InfoVa += Offset;
-
-        IpHeader = (PIP_HEADER)(InfoVa + Info->IpHeader.Offset);
-
-        if (IpHeader->Version == 4) {
-            NblFlags |= NDIS_NBL_FLAGS_IS_IPV4;
-        } else {
-            ASSERT3U(IpHeader->Version, ==, 6);
-            NblFlags |= NDIS_NBL_FLAGS_IS_IPV6;
-        }
-
-        if (Info->TcpHeader.Offset != 0)
-            NblFlags |= NDIS_NBL_FLAGS_IS_TCP;
-        else if (Info->UdpHeader.Offset != 0)
-            NblFlags |= NDIS_NBL_FLAGS_IS_UDP;
-
-        if (Mdl->Next != NULL && Info->Length < Receiver->MaxHeaderSize) {
-            NblFlags |= NDIS_NBL_FLAGS_HD_SPLIT;
-            if (NblFlags & (NDIS_NBL_FLAGS_IS_TCP | NDIS_NBL_FLAGS_IS_UDP))
-                NblFlags |= NDIS_NBL_FLAGS_SPLIT_AT_UPPER_LAYER_PROTOCOL_PAYLOAD;
-            else
-                NblFlags |= NDIS_NBL_FLAGS_SPLIT_AT_UPPER_LAYER_PROTOCOL_HEADER;
-
-            DataPhysicalAddress.QuadPart = (ULONGLONG)MmGetMdlPfnArray(Mdl->Next)[0] << PAGE_SHIFT;
-            DataPhysicalAddress.QuadPart += Mdl->Next->ByteOffset;
-
-            NET_BUFFER_DATA_PHYSICAL_ADDRESS(NetBuffer) = DataPhysicalAddress;
-        }
-
-        NET_BUFFER_LIST_NBL_FLAGS(NetBufferList) = NblFlags;
     }
 
     return NetBufferList;
@@ -460,13 +415,4 @@ ReceiverOffloadOptions(
     )
 {
     return &Receiver->OffloadOptions;
-}
-
-VOID
-ReceiverSplitHeaderData(
-    IN  PXENNET_RECEIVER    Receiver,
-    IN  ULONG               MaxHeaderSize
-    )
-{
-    Receiver->MaxHeaderSize = MaxHeaderSize;
 }

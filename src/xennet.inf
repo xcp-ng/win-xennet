@@ -159,13 +159,6 @@ HKR, Ndi\params\LROIPv6,                          Optional,   0, "0"
 HKR, Ndi\params\LROIPv6\enum,                     "0",        0, %Disabled%
 HKR, Ndi\params\LROIPv6\enum,                     "1",        0, %Enabled%
 
-HKR, Ndi\params\*HeaderDataSplit,                 ParamDesc,  0, %HeaderDataSplit%
-HKR, Ndi\params\*HeaderDataSplit,                 Type,       0, "enum"
-HKR, Ndi\params\*HeaderDataSplit,                 Default,    0, "0"
-HKR, Ndi\params\*HeaderDataSplit,                 Optional,   0, "0"
-HKR, Ndi\params\*HeaderDataSplit\enum,            "0",        0, %Disabled%
-HKR, Ndi\params\*HeaderDataSplit\enum,            "1",        0, %Enabled%
-
 [XenNet_Inst.Services] 
 AddService=xennet,0x02,XenNet_Service,XenNet_EventLog
 
