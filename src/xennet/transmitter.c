@@ -250,11 +250,12 @@ TransmitterSendNetBufferLists(
 
         NetBuffer = NET_BUFFER_LIST_FIRST_NB(NetBufferList);
         while (NetBuffer != NULL) {
+            PNET_BUFFER         NetBufferListNext = NET_BUFFER_NEXT_NB(NetBuffer);
             PVOID               Cookie = NetBufferList;
             XENVIF_PACKET_HASH  Hash;
             NTSTATUS            status;
 
-            ListReserved->Reference++;
+            InterlockedIncrement(&ListReserved->Reference);
 
             Hash.Algorithm = XENVIF_PACKET_HASH_ALGORITHM_NONE;
 
@@ -274,7 +275,7 @@ TransmitterSendNetBufferLists(
                 break;
             }
 
-            NetBuffer = NET_BUFFER_NEXT_NB(NetBuffer);
+            NetBuffer = NetBufferListNext;
         }
 
         NetBufferList = ListNext;
