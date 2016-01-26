@@ -90,6 +90,7 @@ TransmitterTeardown(
 
 typedef struct _NET_BUFFER_LIST_RESERVED {
     LONG    Reference;
+    LONG    Status;
 } NET_BUFFER_LIST_RESERVED, *PNET_BUFFER_LIST_RESERVED;
 
 C_ASSERT(sizeof (NET_BUFFER_LIST_RESERVED) <= RTL_FIELD_SIZE(NET_BUFFER_LIST, MiniportReserved));
@@ -120,6 +121,39 @@ __TransmitterCompleteNetBufferList(
                                     NDIS_SEND_COMPLETE_FLAGS_DISPATCH_LEVEL);
 }
 
+__TransmitterGetNetBufferList(
+    IN  PXENNET_TRANSMITTER     Transmitter,
+    IN  PNET_BUFFER_LIST        NetBufferList
+    )
+{
+    PNET_BUFFER_LIST_RESERVED   ListReserved;
+
+    UNREFERENCED_PARAMETER(Transmitter);
+
+    ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
+
+    if (InterlockedIncrement(&ListReserved->Reference) == 1)
+        ListReserved->Status = NDIS_STATUS_PENDING;
+}
+
+__TransmitterPutNetBufferList(
+    IN  PXENNET_TRANSMITTER     Transmitter,
+    IN  PNET_BUFFER_LIST        NetBufferList
+    )
+{
+    PNET_BUFFER_LIST_RESERVED   ListReserved;
+
+    UNREFERENCED_PARAMETER(Transmitter);
+
+    ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
+
+    ASSERT(ListReserved->Reference != 0);
+    if (InterlockedDecrement(&ListReserved->Reference) == 0)
+        __TransmitterCompleteNetBufferList(Transmitter,
+                                           NetBufferList,
+                                           ListReserved->Status);
+}
+
 static VOID
 __TransmitterReturnPacket(
     IN  PXENNET_TRANSMITTER     Transmitter,
@@ -134,9 +168,8 @@ __TransmitterReturnPacket(
 
     ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
 
-    ASSERT(ListReserved->Reference != 0);
-    if (InterlockedDecrement(&ListReserved->Reference) == 0)
-        __TransmitterCompleteNetBufferList(Transmitter, NetBufferList, Status);
+    (VOID) InterlockedExchange(&ListReserved->Status, Status);
+    __TransmitterPutNetBufferList(Transmitter, NetBufferList);
 }
 
 static VOID
@@ -248,6 +281,8 @@ TransmitterSendNetBufferLists(
         ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
         RtlZeroMemory(ListReserved, sizeof (NET_BUFFER_LIST_RESERVED));
 
+        __TransmitterGetNetBufferList(Transmitter, NetBufferList);
+
         NetBuffer = NET_BUFFER_LIST_FIRST_NB(NetBufferList);
         while (NetBuffer != NULL) {
             PNET_BUFFER         NetBufferListNext = NET_BUFFER_NEXT_NB(NetBuffer);
@@ -255,7 +290,7 @@ TransmitterSendNetBufferLists(
             XENVIF_PACKET_HASH  Hash;
             NTSTATUS            status;
 
-            InterlockedIncrement(&ListReserved->Reference);
+            __TransmitterGetNetBufferList(Transmitter, NetBufferList);
 
             Hash.Algorithm = XENVIF_PACKET_HASH_ALGORITHM_NONE;
 
@@ -277,6 +312,8 @@ TransmitterSendNetBufferLists(
 
             NetBuffer = NetBufferListNext;
         }
+
+        __TransmitterPutNetBufferList(Transmitter, NetBufferList);
 
         NetBufferList = ListNext;
     }
