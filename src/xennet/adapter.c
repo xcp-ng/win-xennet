@@ -32,7 +32,6 @@
 #define INITGUID 1
 
 #include <ndis.h>
-#include <ntstrsafe.h>
 #include <stdlib.h>
 #include <version.h>
 
@@ -46,6 +45,7 @@
 #include "util.h"
 #include "dbg_print.h"
 #include "assert.h"
+#include "link.h"
 
 #define MAXNAMELEN  128
 
@@ -1300,6 +1300,11 @@ __AdapterSetDistribution(
     )
 {
     ULONG               Index;
+    NTSTATUS            (*___snprintf_s)(char *,
+                                         size_t,
+                                         size_t,
+                                         const char *,
+                                         ...);
     CHAR                Distribution[MAXNAMELEN];
     CHAR                Vendor[MAXNAMELEN];
     const CHAR          *Product;
@@ -1307,15 +1312,21 @@ __AdapterSetDistribution(
 
     Trace("====>\n");
 
+    status = LinkGetRoutineAddress("ntdll.dll",
+                                   "_snprintf_s",
+                                   (PVOID *)&___snprintf_s);
+    if (!NT_SUCCESS(status))
+        goto fail1;
+
     Index = 0;
     while (Index <= MAXIMUM_INDEX) {
         PCHAR   Buffer;
 
-        status = RtlStringCbPrintfA(Distribution,
-                                    MAXNAMELEN,
-                                    "%u",
-                                    Index);
-        ASSERT(NT_SUCCESS(status));
+        (VOID) ___snprintf_s(Distribution,
+                             MAXNAMELEN,
+                             _TRUNCATE,
+                             "%u",
+                             Index);
 
         status = XENBUS_STORE(Read,
                               &Adapter->StoreInterface,
@@ -1327,7 +1338,7 @@ __AdapterSetDistribution(
             if (status == STATUS_OBJECT_NAME_NOT_FOUND)
                 goto update;
 
-            goto fail1;
+            goto fail2;
         }
 
         XENBUS_STORE(Free,
@@ -1338,14 +1349,14 @@ __AdapterSetDistribution(
     }
 
     status = STATUS_UNSUCCESSFUL;
-    goto fail2;
+    goto fail3;
 
 update:
-    status = RtlStringCbPrintfA(Vendor,
-                                MAXNAMELEN,
-                                "%s",
-                                VENDOR_NAME_STR);
-    ASSERT(NT_SUCCESS(status));
+    (VOID) ___snprintf_s(Vendor,
+                         MAXNAMELEN,
+                         _TRUNCATE,
+                         "%s",
+                         VENDOR_NAME_STR);
 
     for (Index  = 0; Vendor[Index] != '\0'; Index++)
         if (!isalnum((UCHAR)Vendor[Index]))
@@ -1377,6 +1388,9 @@ update:
 
     Trace("<====\n");
     return STATUS_SUCCESS;
+
+fail3:
+    Error("fail3\n");
 
 fail2:
     Error("fail2\n");

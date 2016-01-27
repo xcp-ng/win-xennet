@@ -36,7 +36,7 @@
     </ClCompile>
     <Link>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
-      <AdditionalDependencies>$(DDK_LIB_PATH)/libcntpr.lib;$(DDK_LIB_PATH)\ndis.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(DDK_LIB_PATH)\ndis.lib;$(DDK_LIB_PATH)/libcntpr.lib;$(DDK_LIB_PATH)/aux_klib.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <EnableCOMDATFolding>false</EnableCOMDATFolding>
     </Link>
     <Inf>
@@ -70,6 +70,7 @@
   <ItemGroup>
     <ClCompile Include="../../src/xennet/adapter.c" />
     <ClCompile Include="../../src/xennet/driver.c" />
+    <ClCompile Include="../../src/xennet/link.c" />
     <ClCompile Include="../../src/xennet/miniport.c" />
     <ClCompile Include="../../src/xennet/receiver.c" />
     <ClCompile Include="../../src/xennet/transmitter.c" />
