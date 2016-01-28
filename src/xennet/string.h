@@ -29,14 +29,23 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _XENNET_LINK_H
-#define _XENNET_LINK_H
+#ifndef _XENNET_STRING_H
+#define _XENNET_STRING_H
+
+#include <ntddk.h>
 
 extern NTSTATUS
-LinkGetRoutineAddress(
-    IN  const CHAR  *ModuleName,
-    IN  const CHAR  *FunctionName,
-    OUT PVOID       *Address
-     );
+StringVPrintf(
+    IN  PSTRING     String,
+    IN  const CHAR  *Format,
+    IN  va_list     Arguments
+    );
 
-#endif  // _XENVIF_LINK_H
+extern NTSTATUS
+StringPrintf(
+    IN  PSTRING     String,
+    IN  const CHAR  *Format,
+    ...
+    );
+
+#endif  // _XENNET_STRING_H

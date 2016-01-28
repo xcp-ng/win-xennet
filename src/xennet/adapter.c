@@ -45,7 +45,7 @@
 #include "util.h"
 #include "dbg_print.h"
 #include "assert.h"
-#include "link.h"
+#include "string.h"
 
 #define MAXNAMELEN  128
 
@@ -81,12 +81,6 @@ struct _XENNET_ADAPTER {
     PXENNET_RECEIVER            Receiver;
     PXENNET_TRANSMITTER         Transmitter;
     BOOLEAN                     Enabled;
-
-    NTSTATUS                    (*_snprintf_s)(char *,
-                                               size_t,
-                                               size_t,
-                                               const char *,
-                                               ...);
 };
 
 static LONG AdapterCount;
@@ -1308,6 +1302,7 @@ __AdapterSetDistribution(
     ULONG               Index;
     CHAR                Distribution[MAXNAMELEN];
     CHAR                Vendor[MAXNAMELEN];
+    STRING              String;
     const CHAR          *Product;
     NTSTATUS            status;
 
@@ -1317,11 +1312,14 @@ __AdapterSetDistribution(
     while (Index <= MAXIMUM_INDEX) {
         PCHAR   Buffer;
 
-        (VOID) Adapter->_snprintf_s(Distribution,
-                                    MAXNAMELEN,
-                                    _TRUNCATE,
-                                    "%u",
-                                    Index);
+        String.Buffer = Distribution;
+        String.MaximumLength = sizeof (Distribution);
+        String.Length = 0;
+
+        status = StringPrintf(&String,
+                              "%u",
+                              Index);
+        ASSERT(NT_SUCCESS(status));
 
         status = XENBUS_STORE(Read,
                               &Adapter->StoreInterface,
@@ -1347,11 +1345,14 @@ __AdapterSetDistribution(
     goto fail2;
 
 update:
-    (VOID) Adapter->_snprintf_s(Vendor,
-                                MAXNAMELEN,
-                                _TRUNCATE,
-                                "%s",
-                                VENDOR_NAME_STR);
+    String.Buffer = Vendor;
+    String.MaximumLength = sizeof (Vendor);
+    String.Length = 0;
+
+    status = StringPrintf(&String,
+                          "%s",
+                          VENDOR_NAME_STR);
+    ASSERT(NT_SUCCESS(status));
 
     for (Index  = 0; Vendor[Index] != '\0'; Index++)
         if (!isalnum((UCHAR)Vendor[Index]))
@@ -1490,22 +1491,16 @@ AdapterEnable(
     if (!NT_SUCCESS(status))
         goto fail2;
 
-    status = LinkGetRoutineAddress("ntdll.dll",
-                                   "_snprintf_s",
-                                   (PVOID *)&Adapter->_snprintf_s);
-    if (!NT_SUCCESS(status))
-        goto fail3;
-
     status = AdapterSetDistribution(Adapter);
     if (!NT_SUCCESS(status))
-        goto fail4;
+        goto fail3;
 
     status = XENVIF_VIF(Enable,
                         &Adapter->VifInterface,
                         AdapterVifCallback,
                         Adapter);
     if (!NT_SUCCESS(status))
-        goto fail5;
+        goto fail4;
 
     AdapterMediaStateChange(Adapter);
 
@@ -1513,11 +1508,8 @@ AdapterEnable(
 
     return NDIS_STATUS_SUCCESS;
 
-fail5:
-    AdapterClearDistribution(Adapter);
-
 fail4:
-    Adapter->_snprintf_s = NULL;
+    AdapterClearDistribution(Adapter);
 
 fail3:
     XENBUS_SUSPEND(Release, &Adapter->SuspendInterface);
@@ -1543,8 +1535,6 @@ AdapterDisable(
     AdapterMediaStateChange(Adapter);
 
     AdapterClearDistribution(Adapter);
-
-    Adapter->_snprintf_s = NULL;
 
     XENBUS_SUSPEND(Release, &Adapter->SuspendInterface);
     XENBUS_STORE(Release, &Adapter->StoreInterface);
