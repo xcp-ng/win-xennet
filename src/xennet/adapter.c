@@ -68,6 +68,12 @@ struct _XENNET_ADAPTER {
     PXENNET_RECEIVER            Receiver;
     PXENNET_TRANSMITTER         Transmitter;
     BOOLEAN                     Enabled;
+
+    NTSTATUS                    (*_snprintf_s)(char *,
+                                               size_t,
+                                               size_t,
+                                               const char *,
+                                               ...);
 };
 
 static LONG AdapterCount;
@@ -1287,11 +1293,6 @@ __AdapterSetDistribution(
     )
 {
     ULONG               Index;
-    NTSTATUS            (*___snprintf_s)(char *,
-                                         size_t,
-                                         size_t,
-                                         const char *,
-                                         ...);
     CHAR                Distribution[MAXNAMELEN];
     CHAR                Vendor[MAXNAMELEN];
     const CHAR          *Product;
@@ -1299,21 +1300,15 @@ __AdapterSetDistribution(
 
     Trace("====>\n");
 
-    status = LinkGetRoutineAddress("ntdll.dll",
-                                   "_snprintf_s",
-                                   (PVOID *)&___snprintf_s);
-    if (!NT_SUCCESS(status))
-        goto fail1;
-
     Index = 0;
     while (Index <= MAXIMUM_INDEX) {
         PCHAR   Buffer;
 
-        (VOID) ___snprintf_s(Distribution,
-                             MAXNAMELEN,
-                             _TRUNCATE,
-                             "%u",
-                             Index);
+        (VOID) Adapter->_snprintf_s(Distribution,
+                                    MAXNAMELEN,
+                                    _TRUNCATE,
+                                    "%u",
+                                    Index);
 
         status = XENBUS_STORE(Read,
                               &Adapter->StoreInterface,
@@ -1325,7 +1320,7 @@ __AdapterSetDistribution(
             if (status == STATUS_OBJECT_NAME_NOT_FOUND)
                 goto update;
 
-            goto fail2;
+            goto fail1;
         }
 
         XENBUS_STORE(Free,
@@ -1336,14 +1331,14 @@ __AdapterSetDistribution(
     }
 
     status = STATUS_UNSUCCESSFUL;
-    goto fail3;
+    goto fail2;
 
 update:
-    (VOID) ___snprintf_s(Vendor,
-                         MAXNAMELEN,
-                         _TRUNCATE,
-                         "%s",
-                         VENDOR_NAME_STR);
+    (VOID) Adapter->_snprintf_s(Vendor,
+                                MAXNAMELEN,
+                                _TRUNCATE,
+                                "%s",
+                                VENDOR_NAME_STR);
 
     for (Index  = 0; Vendor[Index] != '\0'; Index++)
         if (!isalnum((UCHAR)Vendor[Index]))
@@ -1375,9 +1370,6 @@ update:
 
     Trace("<====\n");
     return STATUS_SUCCESS;
-
-fail3:
-    Error("fail3\n");
 
 fail2:
     Error("fail2\n");
@@ -1485,16 +1477,22 @@ AdapterEnable(
     if (!NT_SUCCESS(status))
         goto fail2;
 
-    status = AdapterSetDistribution(Adapter);
+    status = LinkGetRoutineAddress("ntdll.dll",
+                                   "_snprintf_s",
+                                   (PVOID *)&Adapter->_snprintf_s);
     if (!NT_SUCCESS(status))
         goto fail3;
+
+    status = AdapterSetDistribution(Adapter);
+    if (!NT_SUCCESS(status))
+        goto fail4;
 
     status = XENVIF_VIF(Enable,
                         &Adapter->VifInterface,
                         AdapterVifCallback,
                         Adapter);
     if (!NT_SUCCESS(status))
-        goto fail4;
+        goto fail5;
 
     AdapterMediaStateChange(Adapter);
 
@@ -1502,8 +1500,11 @@ AdapterEnable(
 
     return NDIS_STATUS_SUCCESS;
 
-fail4:
+fail5:
     AdapterClearDistribution(Adapter);
+
+fail4:
+    Adapter->_snprintf_s = NULL;
 
 fail3:
     XENBUS_SUSPEND(Release, &Adapter->SuspendInterface);
@@ -1529,6 +1530,8 @@ AdapterDisable(
     AdapterMediaStateChange(Adapter);
 
     AdapterClearDistribution(Adapter);
+
+    Adapter->_snprintf_s = NULL;
 
     XENBUS_SUSPEND(Release, &Adapter->SuspendInterface);
     XENBUS_STORE(Release, &Adapter->StoreInterface);
