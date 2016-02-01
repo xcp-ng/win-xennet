@@ -627,6 +627,10 @@ AdapterGetTcpOffloadParameters(
     if (!NO_CHANGE(Offload->LsoV2IPv6) &&
         !(Options.OffloadIpVersion6LargePacket))
         goto invalid_parameter;
+    if (!NO_CHANGE(Offload->IPsecV2))
+        goto invalid_parameter;
+    if (!NO_CHANGE(Offload->IPsecV2IPv4))
+        goto invalid_parameter;
 
     Changed = FALSE;
     TxOptions = TransmitterOffloadOptions(Adapter->Transmitter);
@@ -656,9 +660,7 @@ AdapterGetTcpOffloadParameters(
     Changed |= CHANGE(RxOptions->OffloadIpVersion6TcpChecksum, RX_ENABLED(Offload->TCPIPv6Checksum));
     Changed |= CHANGE(RxOptions->OffloadIpVersion6UdpChecksum, RX_ENABLED(Offload->UDPIPv6Checksum));
 
-    if (Changed)
-        AdapterIndicateOffloadChanged(Adapter);
-
+    AdapterIndicateOffloadChanged(Adapter);
     return NDIS_STATUS_SUCCESS;
 
 invalid_parameter:
@@ -1019,15 +1021,15 @@ AdapterGetRcvError(
 
 static FORCEINLINE NDIS_STATUS
 AdapterInterruptModeration(
-    IN  PXENNET_ADAPTER     Adapter,
+    IN  PXENNET_ADAPTER                         Adapter,
     IN  PNDIS_INTERRUPT_MODERATION_PARAMETERS   Params,
-    IN  ULONG               BufferLength,
-    IN OUT PULONG           BytesWritten
+    IN  ULONG                                   BufferLength,
+    IN OUT PULONG                               BytesWritten
     )
 {
     UNREFERENCED_PARAMETER(Adapter);
 
-    if (BufferLength < sizeof(NDIS_INTERRUPT_MODERATION_PARAMETERS))
+    if (BufferLength < NDIS_SIZEOF_INTERRUPT_MODERATION_PARAMETERS_REVISION_1)
         goto fail1;
 
     Params->Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
@@ -1037,7 +1039,7 @@ AdapterInterruptModeration(
     Params->Flags = 0;
     Params->InterruptModeration = NdisInterruptModerationNotSupported;
 
-    *BytesWritten = sizeof(NDIS_INTERRUPT_MODERATION_PARAMETERS);
+    *BytesWritten = NDIS_SIZEOF_INTERRUPT_MODERATION_PARAMETERS_REVISION_1;
     return NDIS_STATUS_SUCCESS;
 
 fail1:
@@ -1579,12 +1581,12 @@ AdapterMediaStateChange(
     RtlZeroMemory(&StatusIndication, sizeof(StatusIndication));
     StatusIndication.Header.Type = NDIS_OBJECT_TYPE_STATUS_INDICATION;
     StatusIndication.Header.Revision = NDIS_STATUS_INDICATION_REVISION_1;
-    StatusIndication.Header.Size = NDIS_SIZEOF_STATUS_INDICATION_REVISION_1;
+    StatusIndication.Header.Size = NDIS_SIZEOF_LINK_STATE_REVISION_1;
 
     StatusIndication.SourceHandle = Adapter->NdisAdapterHandle;
     StatusIndication.StatusCode = NDIS_STATUS_LINK_STATE;
     StatusIndication.StatusBuffer = &LinkState;
-    StatusIndication.StatusBufferSize = sizeof (NDIS_LINK_STATE);
+    StatusIndication.StatusBufferSize = NDIS_SIZEOF_LINK_STATE_REVISION_1;
 
     NdisMIndicateStatusEx(Adapter->NdisAdapterHandle, &StatusIndication);
 }
@@ -1668,22 +1670,26 @@ AdapterSetInformation(
         break;
 
     case OID_OFFLOAD_ENCAPSULATION:
-        BytesNeeded = sizeof(NDIS_OFFLOAD_ENCAPSULATION);
+        BytesNeeded = NDIS_SIZEOF_OFFLOAD_ENCAPSULATION_REVISION_1;
         if (BufferLength >= BytesNeeded) {
             ndisStatus = AdapterGetOffloadEncapsulation(Adapter,
                                                         (PNDIS_OFFLOAD_ENCAPSULATION)Buffer);
             if (ndisStatus == NDIS_STATUS_SUCCESS)
-                BytesRead = sizeof(NDIS_OFFLOAD_ENCAPSULATION);
+                BytesRead = NDIS_SIZEOF_OFFLOAD_ENCAPSULATION_REVISION_1;
+        } else {
+            ndisStatus = NDIS_STATUS_INVALID_LENGTH;
         }
         break;
 
     case OID_TCP_OFFLOAD_PARAMETERS:
-        BytesNeeded = sizeof(NDIS_OFFLOAD_PARAMETERS);
+        BytesNeeded = NDIS_OFFLOAD_PARAMETERS_REVISION_2;
         if (BufferLength >= BytesNeeded) {
             ndisStatus = AdapterGetTcpOffloadParameters(Adapter,
                                                         (PNDIS_OFFLOAD_PARAMETERS)Buffer);
             if (ndisStatus == NDIS_STATUS_SUCCESS)
-                BytesRead = sizeof(NDIS_OFFLOAD_PARAMETERS);
+                BytesRead = NDIS_OFFLOAD_PARAMETERS_REVISION_2;
+        } else {
+            ndisStatus = NDIS_STATUS_INVALID_LENGTH;
         }
         break;
 
@@ -2223,7 +2229,7 @@ AdapterQueryInformation(
         break;
 
     case OID_GEN_INTERRUPT_MODERATION:
-        BytesNeeded = sizeof(NDIS_INTERRUPT_MODERATION_PARAMETERS);
+        BytesNeeded = NDIS_SIZEOF_INTERRUPT_MODERATION_PARAMETERS_REVISION_1;
         ndisStatus = AdapterInterruptModeration(Adapter,
                                                 (PNDIS_INTERRUPT_MODERATION_PARAMETERS)Buffer,
                                                 BufferLength,
@@ -2425,7 +2431,7 @@ AdapterSetGeneralAttributes(
     RtlZeroMemory(&Attribs, sizeof(Attribs));
     Attribs.Header.Type = NDIS_OBJECT_TYPE_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES;
     Attribs.Header.Revision = NDIS_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES_REVISION_1;
-    Attribs.Header.Size = sizeof(NDIS_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES);
+    Attribs.Header.Size = NDIS_SIZEOF_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES_REVISION_1;
     Attribs.MediaType = XENNET_MEDIA_TYPE;
 
     XENVIF_VIF(MacQueryMaximumFrameSize,
@@ -2747,7 +2753,7 @@ AdapterInitialize(
     if (ndisStatus != NDIS_STATUS_SUCCESS)
         goto fail11;
 
-    RtlZeroMemory(&Dma, sizeof(NDIS_SG_DMA_DESCRIPTION));
+    RtlZeroMemory(&Dma, sizeof(Dma));
     Dma.Header.Type = NDIS_OBJECT_TYPE_SG_DMA_DESCRIPTION;
     Dma.Header.Revision = NDIS_SG_DMA_DESCRIPTION_REVISION_1;
     Dma.Header.Size = NDIS_SIZEOF_SG_DMA_DESCRIPTION_REVISION_1;
