@@ -1889,7 +1889,8 @@ AdapterQueryInformation(
         BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
-                                ((MAJOR_VERSION << 8) | MINOR_VERSION) << 8,
+                                (MAJOR_VERSION << 16) |
+                                MINOR_VERSION,
                                 &BytesWritten);
         break;
 
@@ -1897,7 +1898,8 @@ AdapterQueryInformation(
         BytesNeeded = sizeof(ULONG);
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
-                                (6 << 8) | 0, // NDIS 6.0
+                                (NDIS_MINIPORT_MAJOR_VERSION << 8) |
+                                NDIS_MINIPORT_MINOR_VERSION,
                                 &BytesWritten);
         break;
 
