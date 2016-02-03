@@ -292,7 +292,38 @@ TransmitterSendNetBufferLists(
 
             __TransmitterGetNetBufferList(Transmitter, NetBufferList);
 
-            Hash.Algorithm = XENVIF_PACKET_HASH_ALGORITHM_NONE;
+            switch (NET_BUFFER_LIST_GET_HASH_FUNCTION(NetBufferList)) {
+            case NdisHashFunctionToeplitz:
+                Hash.Algorithm = XENVIF_PACKET_HASH_ALGORITHM_TOEPLITZ;
+                break;
+
+            default:
+                Hash.Algorithm = XENVIF_PACKET_HASH_ALGORITHM_NONE;
+                break;
+            }
+
+            switch (NET_BUFFER_LIST_GET_HASH_TYPE(NetBufferList)) {
+            case NDIS_HASH_IPV4:
+                Hash.Type = XENVIF_PACKET_HASH_TYPE_IPV4;
+                break;
+
+            case NDIS_HASH_TCP_IPV4:
+                Hash.Type = XENVIF_PACKET_HASH_TYPE_IPV4_TCP;
+                break;
+
+            case NDIS_HASH_IPV6:
+                Hash.Type = XENVIF_PACKET_HASH_TYPE_IPV6;
+                break;
+
+            case NDIS_HASH_TCP_IPV6:
+                Hash.Type = XENVIF_PACKET_HASH_TYPE_IPV6_TCP;
+                break;
+
+            default:
+                break;
+            }
+
+            Hash.Value = NET_BUFFER_LIST_GET_HASH_VALUE(NetBufferList);
 
             status = XENVIF_VIF(TransmitterQueuePacket,
                                 AdapterGetVifInterface(Transmitter->Adapter),

@@ -50,12 +50,24 @@ typedef enum _XENVIF_PACKET_HASH_ALGORITHM {
     /*! None (value should be ignored) */
     XENVIF_PACKET_HASH_ALGORITHM_NONE = 0,
     /*! Unspecified hash (value can be used) */
-    XENVIF_PACKET_HASH_ALGORITHM_UNSPECIFIED
+    XENVIF_PACKET_HASH_ALGORITHM_UNSPECIFIED,
+    /*! Toeplitz hash */
+    XENVIF_PACKET_HASH_ALGORITHM_TOEPLITZ
 } XENVIF_PACKET_HASH_ALGORITHM, *PXENVIF_PACKET_HASH_ALGORITHM;
 
-/*! \struct _XENVIF_PACKET_HASH_V1
-    \brief Hash information
-*/
+typedef enum _XENVIF_PACKET_HASH_TYPE {
+    /*! None (value should be ignored) */
+    XENVIF_PACKET_HASH_TYPE_NONE = 0,
+    /*! IPv4 header only */
+    XENVIF_PACKET_HASH_TYPE_IPV4,
+    /*! IPv4 and TCP headers */
+    XENVIF_PACKET_HASH_TYPE_IPV4_TCP,
+    /*! IPv6 header only */
+    XENVIF_PACKET_HASH_TYPE_IPV6,
+    /*! IPv6 and TCP headers */
+    XENVIF_PACKET_HASH_TYPE_IPV6_TCP
+} XENVIF_PACKET_HASH_TYPE, *PXENVIF_PACKET_HASH_TYPE;
+
 struct _XENVIF_PACKET_HASH_V1 {
     /*! Hash algorithm used to calculate value */
     XENVIF_PACKET_HASH_ALGORITHM    Algorithm;
@@ -63,7 +75,19 @@ struct _XENVIF_PACKET_HASH_V1 {
     ULONG                           Value;
 };
 
-typedef struct _XENVIF_PACKET_HASH_V1 XENVIF_PACKET_HASH, *PXENVIF_PACKET_HASH;
+/*! \struct _XENVIF_PACKET_HASH_V2
+    \brief Hash information
+*/
+struct _XENVIF_PACKET_HASH_V2 {
+    /*! Hash algorithm used to calculate value */
+    XENVIF_PACKET_HASH_ALGORITHM    Algorithm;
+    /*! Scope of hash */
+    XENVIF_PACKET_HASH_TYPE         Type;
+    /*! Calculated value */
+    ULONG                           Value;
+};
+
+typedef struct _XENVIF_PACKET_HASH_V2 XENVIF_PACKET_HASH, *PXENVIF_PACKET_HASH;
 
 /*! \struct _XENVIF_PACKET_HEADER_V1
     \brief Packet header information
@@ -366,6 +390,7 @@ typedef VOID
     \param MaximumSegmentSize The TCP MSS (used only if OffloadOptions.OffloadIpVersion[4|6]LargePacket is set)
     \param TagControlInformation The VLAN TCI (used only if OffloadOptions.OffloadTagManipulation is set)
     \param Info Header information for the packet
+    \param Hash Hash information for the packet
     \param Cookie Cookie that should be passed to XENVIF_RECEIVER_RETURN_PACKET method
 
     \b XENVIF_MAC_STATE_CHANGE:
@@ -425,6 +450,35 @@ typedef NTSTATUS
     IN  PINTERFACE              Interface,
     IN  XENVIF_VIF_STATISTIC    Index,
     OUT PULONGLONG              Value
+    );
+
+/*! \typedef XENVIF_VIF_QUERY_RING_COUNT
+    \brief Query the number of shared rings between frontend
+    and backend
+
+    \param Interface The interface header
+    \param Count Buffer to receive the count
+*/
+typedef VOID
+(*XENVIF_VIF_QUERY_RING_COUNT)(
+    IN  PINTERFACE  Interface,
+    OUT PULONG      Count
+    );
+
+/*! \typedef XENVIF_VIF_UPDATE_HASH_MAPPING
+    \brief Update the mapping of hash to transmitter/receiver ring
+
+    The default mapping is hash % number-of-rings
+
+    \param Interface The interface header
+    \param Mapping The mapping table
+    \param Size The size of the mapping table
+*/
+typedef NTSTATUS
+(*XENVIF_VIF_UPDATE_HASH_MAPPING)(
+    IN  PINTERFACE          Interface,
+    IN  PPROCESSOR_NUMBER   Mapping,
+    IN  ULONG               Size
     );
 
 typedef VOID
@@ -578,6 +632,52 @@ typedef VOID
     IN  PINTERFACE  Interface,
     OUT PULONG      Size
     );
+
+/*! \typedef XENVIF_VIF_RECEIVER_SET_HASH_ALGORITHM
+    \brief Select a hash alorithm
+
+    \param Interface The interface header
+    \param Algorithm The algorithm to enable (or
+    XENVIF_PACKET_HASH_ALGORITHM_NONE to disable hashing)
+*/
+typedef NTSTATUS
+(*XENVIF_VIF_RECEIVER_SET_HASH_ALGORITHM)(
+    IN  PINTERFACE                      Interface,
+    IN  XENVIF_PACKET_HASH_ALGORITHM    Algorithm
+    );
+
+/*! \typedef XENVIF_VIF_RECEIVER_QUERY_HASH_CAPABILITIES
+    \brief Query any algorithm-specific capabilities.
+
+    \param Interface The interface header
+    \param ... Additional capabilities reported by the selected algorithm
+
+    \b XENVIF_PACKET_HASH_ALGORITHM_TOEPLITZ:
+    \param Types Mask of hash types supported
+*/
+typedef NTSTATUS
+(*XENVIF_VIF_RECEIVER_QUERY_HASH_CAPABILITIES)(
+    IN  PINTERFACE  Interface,
+    ...
+    );
+
+/*! \typedef XENVIF_VIF_RECEIVER_UPDATE_HASH_PARAMETERS
+    \brief Set parameters of currently selected algorithm.
+
+    \param Interface The interface header
+    \param ... Additional parameters required by the selected algorithm
+
+    \b XENVIF_PACKET_HASH_ALGORITHM_TOEPLITZ:
+    \param Types Mask of hash types enabled
+    \param Key Pointer to a 40-byte array containing the hash key
+*/
+typedef NTSTATUS
+(*XENVIF_VIF_RECEIVER_UPDATE_HASH_PARAMETERS)(
+    IN  PINTERFACE  Interface,
+    ...
+    );
+
+#define XENVIF_VIF_HASH_KEY_SIZE    40
 
 /*! \typedef XENVIF_VIF_MAC_QUERY_STATE
     \brief Query the current MAC (link) state
@@ -822,7 +922,41 @@ struct _XENVIF_VIF_INTERFACE_V5 {
     XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
 };
 
-typedef struct _XENVIF_VIF_INTERFACE_V5 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTERFACE;
+/*! \struct _XENVIF_VIF_INTERFACE_V6
+    \brief VIF interface version 6
+    \ingroup interfaces
+*/
+struct _XENVIF_VIF_INTERFACE_V6 {
+    INTERFACE                                       Interface;
+    XENVIF_VIF_ACQUIRE                              Acquire;
+    XENVIF_VIF_RELEASE                              Release;
+    XENVIF_VIF_ENABLE                               Enable;
+    XENVIF_VIF_DISABLE                              Disable;
+    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
+    XENVIF_VIF_QUERY_RING_COUNT                     QueryRingCount;
+    XENVIF_VIF_UPDATE_HASH_MAPPING                  UpdateHashMapping;
+    XENVIF_VIF_RECEIVER_RETURN_PACKET               ReceiverReturnPacket;
+    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
+    XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE           ReceiverSetBackfillSize;
+    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
+    XENVIF_VIF_RECEIVER_SET_HASH_ALGORITHM          ReceiverSetHashAlgorithm;
+    XENVIF_VIF_RECEIVER_QUERY_HASH_CAPABILITIES     ReceiverQueryHashCapabilities;
+    XENVIF_VIF_RECEIVER_UPDATE_HASH_PARAMETERS      ReceiverUpdateHashParameters;
+    XENVIF_VIF_TRANSMITTER_QUEUE_PACKET             TransmitterQueuePacket;
+    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
+    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
+    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
+    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
+    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
+    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
+    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
+    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
+    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
+    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
+    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
+};
+
+typedef struct _XENVIF_VIF_INTERFACE_V6 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTERFACE;
 
 /*! \def XENVIF_VIF
     \brief Macro at assist in method invocation
@@ -833,6 +967,6 @@ typedef struct _XENVIF_VIF_INTERFACE_V5 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTER
 #endif  // _WINDLL
 
 #define XENVIF_VIF_INTERFACE_VERSION_MIN    2
-#define XENVIF_VIF_INTERFACE_VERSION_MAX    5
+#define XENVIF_VIF_INTERFACE_VERSION_MAX    6
 
 #endif  // _XENVIF_INTERFACE_H

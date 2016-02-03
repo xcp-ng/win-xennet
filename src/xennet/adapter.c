@@ -60,7 +60,16 @@ typedef struct _PROPERTIES {
     int lsov6;
     int lrov4;
     int lrov6;
+    int rss;
 } PROPERTIES, *PPROPERTIES;
+
+typedef struct _XENNET_RSS {
+    BOOLEAN Supported;
+    BOOLEAN HashEnabled;
+    BOOLEAN ScaleEnabled;
+    ULONG   Types;
+    UCHAR   Key[NDIS_RSS_HASH_SECRET_KEY_MAX_SIZE_REVISION_1];
+} XENNET_RSS, *PXENNET_RSS;
 
 struct _XENNET_ADAPTER {
     XENVIF_VIF_INTERFACE        VifInterface;
@@ -77,6 +86,7 @@ struct _XENNET_ADAPTER {
     NDIS_PNP_CAPABILITIES       Capabilities;
     NDIS_OFFLOAD                Offload;
     PROPERTIES                  Properties;
+    XENNET_RSS                  Rss;
 
     PXENNET_RECEIVER            Receiver;
     PXENNET_TRANSMITTER         Transmitter;
@@ -138,6 +148,8 @@ static NDIS_OID XennetSupportedOids[] =
     OID_PNP_CAPABILITIES,
     OID_PNP_QUERY_POWER,
     OID_PNP_SET_POWER,
+    OID_GEN_RECEIVE_SCALE_PARAMETERS,
+    OID_GEN_RECEIVE_HASH,
 };
 
 #define ADAPTER_POOL_TAG    'AteN'
@@ -211,6 +223,7 @@ AdapterVifCallback(
         USHORT                          MaximumSegmentSize;
         USHORT                          TagControlInformation;
         PXENVIF_PACKET_INFO             Info;
+        PXENVIF_PACKET_HASH             Hash;
         PVOID                           Cookie;
 
         Mdl = va_arg(Arguments, PMDL);
@@ -220,6 +233,7 @@ AdapterVifCallback(
         MaximumSegmentSize = va_arg(Arguments, USHORT);
         TagControlInformation = va_arg(Arguments, USHORT);
         Info = va_arg(Arguments, PXENVIF_PACKET_INFO);
+        Hash = va_arg(Arguments, PXENVIF_PACKET_HASH);
         Cookie = va_arg(Arguments, PVOID);
 
         ReceiverQueuePacket(Adapter->Receiver,
@@ -230,6 +244,7 @@ AdapterVifCallback(
                             MaximumSegmentSize,
                             TagControlInformation,
                             Info,
+                            Hash,
                             Cookie);
         break;
     }
@@ -672,6 +687,232 @@ invalid_parameter:
 #undef TX_ENABLED
 #undef CHANGE
 
+static VOID
+AdapterDisableRSSHash(
+    IN  PXENNET_ADAPTER Adapter
+    )
+{
+    Adapter->Rss.ScaleEnabled = FALSE;
+    Adapter->Rss.HashEnabled = FALSE;
+
+    (VOID) XENVIF_VIF(ReceiverSetHashAlgorithm,
+                      &Adapter->VifInterface,
+                      XENVIF_PACKET_HASH_ALGORITHM_NONE);
+}
+
+static NDIS_STATUS
+AdapterUpdateRSSTable(
+    IN  PXENNET_ADAPTER Adapter,
+    IN  PCCHAR          Table,
+    IN  ULONG           TableSize
+    )
+{
+    PROCESSOR_NUMBER    Mapping[NDIS_RSS_INDIRECTION_TABLE_MAX_SIZE_REVISION_1];
+    ULONG               Index;
+    NTSTATUS            status;
+
+    if (TableSize == 0) {
+        AdapterDisableRSSHash(Adapter);
+        return NDIS_STATUS_SUCCESS;
+    }
+
+    RtlZeroMemory(Mapping, sizeof (Mapping));
+    for (Index = 0; Index < TableSize; Index++) {
+        Mapping[Index].Group = 0;
+        Mapping[Index].Number = Table[Index];
+    }
+
+    status = XENVIF_VIF(UpdateHashMapping,
+                        &Adapter->VifInterface,
+                        Mapping,
+                        TableSize);
+
+    return (NT_SUCCESS(status)) ? NDIS_STATUS_SUCCESS : NDIS_STATUS_INVALID_DATA;
+}
+
+static NDIS_STATUS
+AdapterUpdateRSSKey(
+    IN  PXENNET_ADAPTER Adapter,
+    IN  PUCHAR          Key,
+    IN  ULONG           KeySize
+    )
+{
+    NTSTATUS            status;
+
+    if (KeySize == 0) {
+        AdapterDisableRSSHash(Adapter);
+        return NDIS_STATUS_SUCCESS;
+    }
+
+    RtlZeroMemory(Adapter->Rss.Key, NDIS_RSS_HASH_SECRET_KEY_MAX_SIZE_REVISION_1);
+    RtlCopyMemory(Adapter->Rss.Key, Key, KeySize);
+
+    status = XENVIF_VIF(ReceiverUpdateHashParameters,
+                        &Adapter->VifInterface,
+                        Adapter->Rss.Types,
+                        Adapter->Rss.Key);
+
+    return (NT_SUCCESS(status)) ? NDIS_STATUS_SUCCESS : NDIS_STATUS_INVALID_DATA;
+}
+
+static NDIS_STATUS
+AdapterUpdateRSSHash(
+    IN  PXENNET_ADAPTER Adapter,
+    IN  ULONG           Information
+    )
+{
+    ULONG               HashType = NDIS_RSS_HASH_TYPE_FROM_HASH_INFO(Information);
+    ULONG               HashFunc = NDIS_RSS_HASH_FUNC_FROM_HASH_INFO(Information);
+    NTSTATUS            status;
+
+    if (HashFunc == 0) {
+        AdapterDisableRSSHash(Adapter);
+        return NDIS_STATUS_SUCCESS;
+    }
+
+    if (HashFunc != NdisHashFunctionToeplitz)
+        return NDIS_STATUS_FAILURE;
+
+    if (HashType == 0)
+        return NDIS_STATUS_FAILURE;
+
+    if (HashType & ~(NDIS_HASH_TCP_IPV4 |
+                     NDIS_HASH_IPV4 |
+                     NDIS_HASH_TCP_IPV6 |
+                     NDIS_HASH_IPV6))
+        return NDIS_STATUS_FAILURE;
+
+    status = XENVIF_VIF(ReceiverSetHashAlgorithm,
+                        &Adapter->VifInterface,
+                        XENVIF_PACKET_HASH_ALGORITHM_TOEPLITZ);
+    if (!NT_SUCCESS(status))
+        return NDIS_STATUS_FAILURE;
+
+    Adapter->Rss.Types = 0;
+
+    if (HashType & NDIS_HASH_TCP_IPV4)
+        Adapter->Rss.Types |= 1 << XENVIF_PACKET_HASH_TYPE_IPV4_TCP;
+
+    if (HashType & NDIS_HASH_IPV4)
+        Adapter->Rss.Types |= 1 << XENVIF_PACKET_HASH_TYPE_IPV4;
+
+    if (HashType & NDIS_HASH_TCP_IPV6)
+        Adapter->Rss.Types |= 1 << XENVIF_PACKET_HASH_TYPE_IPV6_TCP;
+
+    if (HashType & NDIS_HASH_IPV6)
+        Adapter->Rss.Types |= 1 << XENVIF_PACKET_HASH_TYPE_IPV6;
+
+    status = XENVIF_VIF(ReceiverUpdateHashParameters,
+                        &Adapter->VifInterface,
+                        Adapter->Rss.Types,
+                        Adapter->Rss.Key);
+
+    return (NT_SUCCESS(status)) ? NDIS_STATUS_SUCCESS : NDIS_STATUS_INVALID_DATA;
+}
+
+static NDIS_STATUS
+AdapterGetReceiveScaleParameters(
+    IN  PXENNET_ADAPTER                 Adapter,
+    IN  PNDIS_RECEIVE_SCALE_PARAMETERS  Parameters
+    )
+{
+    NDIS_STATUS                         ndisStatus;
+
+    ASSERT3U(Parameters->Header.Type, ==, NDIS_OBJECT_TYPE_RSS_PARAMETERS);
+    ASSERT3U(Parameters->Header.Revision, ==, NDIS_RECEIVE_SCALE_PARAMETERS_REVISION_1);
+    ASSERT3U(Parameters->Header.Size, >=, NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_1);
+
+    if (!Adapter->Rss.Supported)
+        return NDIS_STATUS_NOT_SUPPORTED;
+
+    if (!Adapter->Properties.rss)
+        return NDIS_STATUS_NOT_SUPPORTED;
+
+    if (Adapter->Rss.HashEnabled)
+        return NDIS_STATUS_NOT_SUPPORTED;
+
+    if (!(Parameters->Flags & NDIS_RSS_PARAM_FLAG_DISABLE_RSS)) {
+        Adapter->Rss.ScaleEnabled = TRUE;
+    } else {
+        AdapterDisableRSSHash(Adapter);
+        return NDIS_STATUS_SUCCESS;
+    }
+
+    if (!(Parameters->Flags & NDIS_RSS_PARAM_FLAG_HASH_INFO_UNCHANGED)) {
+        ndisStatus = AdapterUpdateRSSHash(Adapter, Parameters->HashInformation);
+        if (ndisStatus != NDIS_STATUS_SUCCESS)
+            goto fail;
+    }
+
+    if (!(Parameters->Flags & NDIS_RSS_PARAM_FLAG_HASH_KEY_UNCHANGED)) {
+        ndisStatus = AdapterUpdateRSSKey(Adapter,
+                                         (PUCHAR)Parameters + Parameters->HashSecretKeyOffset,
+                                         Parameters->HashSecretKeySize);
+        if (ndisStatus != NDIS_STATUS_SUCCESS)
+            goto fail;
+    }
+
+    if (!(Parameters->Flags & NDIS_RSS_PARAM_FLAG_ITABLE_UNCHANGED)) {
+        ndisStatus = AdapterUpdateRSSTable(Adapter,
+                                           (PCCHAR)Parameters + Parameters->IndirectionTableOffset,
+                                           Parameters->IndirectionTableSize);
+        if (ndisStatus != NDIS_STATUS_SUCCESS)
+            goto fail;
+    }
+
+    return NDIS_STATUS_SUCCESS;
+
+fail:
+    AdapterDisableRSSHash(Adapter);
+    return ndisStatus;
+}
+
+static NDIS_STATUS
+AdapterGetReceiveHashParameters(
+    IN  PXENNET_ADAPTER                 Adapter,
+    IN  PNDIS_RECEIVE_HASH_PARAMETERS   Parameters
+    )
+{
+    NDIS_STATUS                         ndisStatus;
+
+    ASSERT3U(Parameters->Header.Type, ==, NDIS_OBJECT_TYPE_DEFAULT);
+    ASSERT3U(Parameters->Header.Revision, ==, NDIS_RECEIVE_HASH_PARAMETERS_REVISION_1);
+    ASSERT3U(Parameters->Header.Size, >=, NDIS_SIZEOF_RECEIVE_HASH_PARAMETERS_REVISION_1);
+
+    if (!Adapter->Rss.Supported)
+        return NDIS_STATUS_NOT_SUPPORTED;
+
+    if (Adapter->Rss.ScaleEnabled)
+        return NDIS_STATUS_NOT_SUPPORTED;
+
+    if (Parameters->Flags & NDIS_RECEIVE_HASH_FLAG_ENABLE_HASH) {
+        Adapter->Rss.HashEnabled = TRUE;
+    } else {
+        AdapterDisableRSSHash(Adapter);
+        return NDIS_STATUS_SUCCESS;
+    }
+
+    if (!(Parameters->Flags & NDIS_RECEIVE_HASH_FLAG_HASH_INFO_UNCHANGED)) {
+        ndisStatus = AdapterUpdateRSSHash(Adapter, Parameters->HashInformation);
+        if (ndisStatus != NDIS_STATUS_SUCCESS)
+            goto fail;
+    }
+
+    if (!(Parameters->Flags & NDIS_RECEIVE_HASH_FLAG_HASH_KEY_UNCHANGED)) {
+        ndisStatus = AdapterUpdateRSSKey(Adapter,
+                                         (PUCHAR)Parameters + Parameters->HashSecretKeyOffset,
+                                         Parameters->HashSecretKeySize);
+        if (ndisStatus != NDIS_STATUS_SUCCESS)
+            goto fail;
+    }
+
+    return NDIS_STATUS_SUCCESS;
+
+fail:
+    AdapterDisableRSSHash(Adapter);
+    return ndisStatus;
+}
+
 static NDIS_STATUS
 AdapterQueryGeneralStatistics(
     IN  PXENNET_ADAPTER     Adapter,
@@ -1040,6 +1281,59 @@ AdapterInterruptModeration(
     Params->InterruptModeration = NdisInterruptModerationNotSupported;
 
     *BytesWritten = NDIS_SIZEOF_INTERRUPT_MODERATION_PARAMETERS_REVISION_1;
+    return NDIS_STATUS_SUCCESS;
+
+fail1:
+    *BytesWritten = 0;
+    return NDIS_STATUS_BUFFER_TOO_SHORT;
+}
+
+static FORCEINLINE NDIS_STATUS
+AdapterReceiveHash(
+    IN  PXENNET_ADAPTER                 Adapter,
+    IN  PNDIS_RECEIVE_HASH_PARAMETERS   Params,
+    IN  ULONG                           BufferLength,
+    IN OUT PULONG                       BytesWritten
+    )
+{
+    ULONG                               HashType;
+    ULONG                               HashFunc;
+
+    if (BufferLength < NDIS_SIZEOF_RECEIVE_HASH_PARAMETERS_REVISION_1 +
+                       sizeof (Adapter->Rss.Key))
+        goto fail1;
+
+    Params->Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
+    Params->Header.Revision = NDIS_RECEIVE_HASH_PARAMETERS_REVISION_1;
+    Params->Header.Size = NDIS_SIZEOF_RECEIVE_HASH_PARAMETERS_REVISION_1;
+
+    Params->Flags = (Adapter->Rss.HashEnabled) ? NDIS_RECEIVE_HASH_FLAG_ENABLE_HASH : 0;
+
+    HashFunc = NdisHashFunctionToeplitz;
+    HashType = 0;
+
+    if (Adapter->Rss.Types & (1 << XENVIF_PACKET_HASH_TYPE_IPV4_TCP))
+        HashType |= NDIS_HASH_TCP_IPV4;
+
+    if (Adapter->Rss.Types & (1 << XENVIF_PACKET_HASH_TYPE_IPV4))
+        HashType |= NDIS_HASH_IPV4;
+
+    if (Adapter->Rss.Types & (1 << XENVIF_PACKET_HASH_TYPE_IPV6_TCP))
+        HashType |= NDIS_HASH_TCP_IPV6;
+
+    if (Adapter->Rss.Types & (1 << XENVIF_PACKET_HASH_TYPE_IPV6))
+        HashType |= NDIS_HASH_IPV6;
+
+    Params->HashInformation = NDIS_RSS_HASH_INFO_FROM_TYPE_AND_FUNC(HashType, HashFunc);
+    Params->HashSecretKeySize = sizeof (Adapter->Rss.Key);
+    Params->HashSecretKeyOffset = NDIS_SIZEOF_RECEIVE_HASH_PARAMETERS_REVISION_1;
+
+    RtlCopyMemory((PUCHAR)Params + Params->HashSecretKeyOffset,
+                  Adapter->Rss.Key,
+                  Params->HashSecretKeySize);
+
+    *BytesWritten = NDIS_SIZEOF_RECEIVE_HASH_PARAMETERS_REVISION_1 +
+                    sizeof (Adapter->Rss.Key);
     return NDIS_STATUS_SUCCESS;
 
 fail1:
@@ -1693,6 +1987,30 @@ AdapterSetInformation(
         }
         break;
 
+    case OID_GEN_RECEIVE_SCALE_PARAMETERS:
+        BytesNeeded = NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_1;
+        if (BufferLength >= BytesNeeded) {
+            ndisStatus = AdapterGetReceiveScaleParameters(Adapter,
+                                                          (PNDIS_RECEIVE_SCALE_PARAMETERS)Buffer);
+            if (ndisStatus == NDIS_STATUS_SUCCESS)
+                BytesRead = sizeof(NDIS_RECEIVE_SCALE_PARAMETERS);
+        } else {
+            ndisStatus = NDIS_STATUS_INVALID_LENGTH;
+        }
+        break;
+
+    case OID_GEN_RECEIVE_HASH:
+        BytesNeeded = NDIS_SIZEOF_RECEIVE_HASH_PARAMETERS_REVISION_1;
+        if (BufferLength >= BytesNeeded) {
+            ndisStatus = AdapterGetReceiveHashParameters(Adapter,
+                                                         (PNDIS_RECEIVE_HASH_PARAMETERS)Buffer);
+            if (ndisStatus == NDIS_STATUS_SUCCESS)
+                BytesRead = sizeof(NDIS_RECEIVE_HASH_PARAMETERS);
+        } else {
+            ndisStatus = NDIS_STATUS_INVALID_LENGTH;
+        }
+        break;
+
     case OID_GEN_INTERRUPT_MODERATION:
     case OID_GEN_MACHINE_NAME:
         Warn = FALSE;
@@ -2238,6 +2556,15 @@ AdapterQueryInformation(
                                                 &BytesWritten);
         break;
 
+    case OID_GEN_RECEIVE_HASH:
+        BytesNeeded = NDIS_SIZEOF_RECEIVE_HASH_PARAMETERS_REVISION_1 +
+                      sizeof (Adapter->Rss.Key);
+        ndisStatus = AdapterReceiveHash(Adapter,
+                                        (PNDIS_RECEIVE_HASH_PARAMETERS)Buffer,
+                                        BufferLength,
+                                        &BytesWritten);
+        break;
+
     case OID_IP4_OFFLOAD_STATS:
     case OID_IP6_OFFLOAD_STATS:
     case OID_GEN_SUPPORTED_GUIDS:
@@ -2385,6 +2712,7 @@ AdapterGetAdvancedSettings(
     READ_PROPERTY(Adapter->Properties.lrov4, L"LROIPv4", 1, Handle);
     READ_PROPERTY(Adapter->Properties.lrov6, L"LROIPv6", 1, Handle);
     READ_PROPERTY(Adapter->Properties.need_csum_value, L"NeedChecksumValue", 1, Handle);
+    READ_PROPERTY(Adapter->Properties.rss, L"*RSS", 1, Handle);
 
     NdisCloseConfiguration(Handle);
 
@@ -2428,7 +2756,10 @@ AdapterSetGeneralAttributes(
     )
 {
     NDIS_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES    Attribs;
+    ULONG                                       Types;
+    NDIS_RECEIVE_SCALE_CAPABILITIES             Rss;
     NDIS_STATUS                                 ndisStatus;
+    NTSTATUS                                    status;
 
     RtlZeroMemory(&Attribs, sizeof(Attribs));
     Attribs.Header.Type = NDIS_OBJECT_TYPE_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES;
@@ -2462,7 +2793,6 @@ AdapterSetGeneralAttributes(
                (PETHERNET_ADDRESS)&Attribs.CurrentMacAddress);
 
     Attribs.PhysicalMediumType = NdisPhysicalMedium802_3;
-    Attribs.RecvScaleCapabilities = NULL;
     Attribs.AccessType = NET_IF_ACCESS_BROADCAST;
     Attribs.DirectionType = NET_IF_DIRECTION_SENDRECEIVE;
     Attribs.ConnectionType = NET_IF_CONNECTION_DEDICATED;
@@ -2489,6 +2819,50 @@ AdapterSetGeneralAttributes(
     Attribs.SupportedOidList = XennetSupportedOids;
     Attribs.SupportedOidListLength = sizeof(XennetSupportedOids);
 
+    Attribs.RecvScaleCapabilities = NULL;
+
+    if (!Adapter->Properties.rss) {
+        Info("RSS DISABLED\n");
+        goto done;
+    }
+
+    status = XENVIF_VIF(ReceiverSetHashAlgorithm,
+                        &Adapter->VifInterface,
+                        XENVIF_PACKET_HASH_ALGORITHM_TOEPLITZ);
+    if (!NT_SUCCESS(status))
+        goto done;
+
+    status = XENVIF_VIF(ReceiverQueryHashCapabilities,
+                        &Adapter->VifInterface,
+                        &Types);
+    if (!NT_SUCCESS(status))
+        goto done;
+
+    RtlZeroMemory(&Rss, sizeof(Rss));
+    Rss.Header.Type = NDIS_OBJECT_TYPE_RSS_CAPABILITIES;
+    Rss.Header.Revision = NDIS_RECEIVE_SCALE_CAPABILITIES_REVISION_1;
+    Rss.Header.Size = NDIS_SIZEOF_RECEIVE_SCALE_CAPABILITIES_REVISION_1;
+
+    Rss.CapabilitiesFlags = NDIS_RSS_CAPS_MESSAGE_SIGNALED_INTERRUPTS |
+                            NDIS_RSS_CAPS_CLASSIFICATION_AT_ISR |
+                            NDIS_RSS_CAPS_CLASSIFICATION_AT_DPC |
+                            NdisHashFunctionToeplitz;
+
+    if (Types & (1 << XENVIF_PACKET_HASH_TYPE_IPV4_TCP))
+        Rss.CapabilitiesFlags |= NDIS_RSS_CAPS_HASH_TYPE_TCP_IPV4;
+
+    if (Types & (1 << XENVIF_PACKET_HASH_TYPE_IPV6_TCP))
+        Rss.CapabilitiesFlags |= NDIS_RSS_CAPS_HASH_TYPE_TCP_IPV6;
+
+    XENVIF_VIF(QueryRingCount,
+               &Adapter->VifInterface,
+               &Rss.NumberOfReceiveQueues);
+    Rss.NumberOfInterruptMessages = Rss.NumberOfReceiveQueues;
+
+    Adapter->Rss.Supported = TRUE;
+    Attribs.RecvScaleCapabilities = &Rss;
+
+done:
     ndisStatus = NdisMSetMiniportAttributes(Adapter->NdisAdapterHandle,
                                             (PNDIS_MINIPORT_ADAPTER_ATTRIBUTES)&Attribs);
 

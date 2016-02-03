@@ -83,6 +83,11 @@ __ReceiverAllocateNetBufferList(
         Receiver->GetList = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
         NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
 
+        NET_BUFFER_LIST_INFO(NetBufferList, TcpIpChecksumNetBufferListInfo) = NULL;
+        NET_BUFFER_LIST_INFO(NetBufferList, Ieee8021QNetBufferListInfo) = NULL;
+        NET_BUFFER_LIST_INFO(NetBufferList, NetBufferListHashInfo) = NULL;
+        NET_BUFFER_LIST_INFO(NetBufferList, NetBufferListHashValue) = NULL;
+
         NetBuffer = NET_BUFFER_LIST_FIRST_NB(NetBufferList);
         NET_BUFFER_FIRST_MDL(NetBuffer) = Mdl;
         NET_BUFFER_CURRENT_MDL(NetBuffer) = Mdl;
@@ -174,6 +179,7 @@ __ReceiverReceivePacket(
     IN  USHORT                                  MaximumSegmentSize,
     IN  USHORT                                  TagControlInformation,
     IN  PXENVIF_PACKET_INFO                     Info,
+    IN  PXENVIF_PACKET_HASH                     Hash,
     IN  PVOID                                   Cookie
     )
 {
@@ -219,6 +225,42 @@ __ReceiverReceivePacket(
 
         NET_BUFFER_LIST_INFO(NetBufferList, Ieee8021QNetBufferListInfo) = Ieee8021QInfo.Value;
     }
+
+    switch (Hash->Algorithm) {
+    case XENVIF_PACKET_HASH_ALGORITHM_TOEPLITZ:
+        NET_BUFFER_LIST_SET_HASH_FUNCTION(NetBufferList,
+                                          NdisHashFunctionToeplitz);
+        break;
+
+    default:
+        break;
+    }
+
+    switch (Hash->Type) {
+    case XENVIF_PACKET_HASH_TYPE_IPV4:
+        NET_BUFFER_LIST_SET_HASH_TYPE(NetBufferList,
+                                      NDIS_HASH_IPV4);
+        break;
+
+    case XENVIF_PACKET_HASH_TYPE_IPV4_TCP:
+        NET_BUFFER_LIST_SET_HASH_TYPE(NetBufferList,
+                                      NDIS_HASH_TCP_IPV4);
+        break;
+
+    case XENVIF_PACKET_HASH_TYPE_IPV6:
+        NET_BUFFER_LIST_SET_HASH_TYPE(NetBufferList,
+                                      NDIS_HASH_IPV6);
+        break;
+
+    case XENVIF_PACKET_HASH_TYPE_IPV6_TCP:
+        NET_BUFFER_LIST_SET_HASH_TYPE(NetBufferList,
+                                      NDIS_HASH_TCP_IPV6);
+        break;
+    }
+
+    NET_BUFFER_LIST_SET_HASH_VALUE(NetBufferList,
+                                   Hash->Value);
+
 
     return NetBufferList;
 
@@ -384,6 +426,7 @@ ReceiverQueuePacket(
     IN  USHORT                          MaximumSegmentSize,
     IN  USHORT                          TagControlInformation,
     IN  PXENVIF_PACKET_INFO             Info,
+    IN  PXENVIF_PACKET_HASH             Hash,
     IN  PVOID                           Cookie
     )
 {
@@ -400,6 +443,7 @@ ReceiverQueuePacket(
                                             MaximumSegmentSize,
                                             TagControlInformation,
                                             Info,
+                                            Hash,
                                             Cookie);
 
     if (NetBufferList != NULL) {
