@@ -162,7 +162,7 @@ __ReceiverReturnNetBufferList(
                VifInterface,
                Cookie);
 
-    (VOID) InterlockedIncrement(&Receiver->InNDIS);
+    (VOID) InterlockedDecrement(&Receiver->InNDIS);
 }
 
 static PNET_BUFFER_LIST
