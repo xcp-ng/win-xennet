@@ -43,8 +43,6 @@ typedef struct _XENNET_DRIVER {
 
 static XENNET_DRIVER Driver;
 
-extern PULONG InitSafeBootMode;
-
 typedef struct _XENNET_CONTEXT {
     PDEVICE_CAPABILITIES    Capabilities;
     PIO_COMPLETION_ROUTINE  CompletionRoutine;
@@ -166,9 +164,6 @@ DriverUnload(
 
     Trace("====>\n");
 
-    if (*InitSafeBootMode > 0)
-        goto done;
-
     if (Driver.MiniportHandle)
         NdisMDeregisterMiniportDriver(Driver.MiniportHandle);
     Driver.MiniportHandle = NULL;
@@ -182,7 +177,6 @@ DriverUnload(
          MONTH,
          YEAR);
 
-done:
     Trace("<====\n");
 }
 
@@ -205,9 +199,6 @@ DriverEntry (
     ExInitializeDriverRuntime(DrvRtPoolNxOptIn);
 
     Trace("====>\n");
-
-    if (*InitSafeBootMode > 0)
-        return NDIS_STATUS_SUCCESS;
 
     Info("XENNET %d.%d.%d (%d) (%02d.%02d.%04d)\n",
          MAJOR_VERSION,
