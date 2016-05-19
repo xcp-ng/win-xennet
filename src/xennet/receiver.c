@@ -31,6 +31,7 @@
 
 #include <ndis.h>
 #include <tcpip.h>
+#include <xen.h>
 
 #include "util.h"
 #include "receiver.h"
@@ -42,8 +43,7 @@ struct _XENNET_RECEIVER {
     PXENNET_ADAPTER             Adapter;
     NDIS_HANDLE                 NetBufferListPool;
     PNET_BUFFER_LIST            PutList;
-    PNET_BUFFER_LIST            GetList;
-    KSPIN_LOCK                  Lock;
+    PNET_BUFFER_LIST            GetList[HVM_MAX_VCPUS];
     LONG                        InNDIS;
     LONG                        InNDISMax;
     XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
@@ -67,20 +67,22 @@ __ReceiverAllocateNetBufferList(
     IN  PVOID                   Cookie
     )
 {
+    ULONG                       Index;
     PNET_BUFFER_LIST            NetBufferList;
     PNET_BUFFER_LIST_RESERVED   ListReserved;
 
     ASSERT3U(KeGetCurrentIrql(), ==, DISPATCH_LEVEL);
-    KeAcquireSpinLockAtDpcLevel(&Receiver->Lock);
 
-    if (Receiver->GetList == NULL)
-        Receiver->GetList = InterlockedExchangePointer(&Receiver->PutList, NULL);
+    Index = KeGetCurrentProcessorNumberEx(NULL);
 
-    NetBufferList = Receiver->GetList;
+    if (Receiver->GetList[Index] == NULL)
+        Receiver->GetList[Index] = InterlockedExchangePointer(&Receiver->PutList, NULL);
+
+    NetBufferList = Receiver->GetList[Index];
     if (NetBufferList != NULL) {
         PNET_BUFFER NetBuffer;
 
-        Receiver->GetList = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
+        Receiver->GetList[Index] = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
         NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
 
         NET_BUFFER_LIST_INFO(NetBufferList, TcpIpChecksumNetBufferListInfo) = NULL;
@@ -105,8 +107,6 @@ __ReceiverAllocateNetBufferList(
                                                               Length);
         ASSERT(IMPLY(NetBufferList != NULL, NET_BUFFER_LIST_NEXT_NBL(NetBufferList) == NULL));
     }
-
-    KeReleaseSpinLockFromDpcLevel(&Receiver->Lock);
 
     ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
     ASSERT3P(ListReserved->Cookie, ==, NULL);
@@ -345,8 +345,6 @@ ReceiverInitialize(
     if ((*Receiver)->NetBufferListPool == NULL)
         goto fail2;
 
-    KeInitializeSpinLock(&(*Receiver)->Lock);
-
     return NDIS_STATUS_SUCCESS;
 
 fail2:
@@ -359,20 +357,24 @@ ReceiverTeardown(
     IN  PXENNET_RECEIVER    Receiver
     )
 {
+    ULONG                   Index;
     PNET_BUFFER_LIST        NetBufferList;
 
     ASSERT(Receiver != NULL);
 
-    NetBufferList = Receiver->GetList;
-    while (NetBufferList != NULL) {
-        PNET_BUFFER_LIST    Next;
+    for (Index = 0; Index < HVM_MAX_VCPUS; Index++) {
+        NetBufferList = Receiver->GetList[Index];
 
-        Next = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
-        NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
+        while (NetBufferList != NULL) {
+            PNET_BUFFER_LIST    Next;
 
-        NdisFreeNetBufferList(NetBufferList);
+            Next = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
+            NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
 
-        NetBufferList = Next;
+            NdisFreeNetBufferList(NetBufferList);
+
+            NetBufferList = Next;
+        }
     }
 
     NetBufferList = Receiver->PutList;
