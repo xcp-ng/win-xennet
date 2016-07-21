@@ -35,7 +35,7 @@ ClassGUID={4d36e972-e325-11ce-bfc1-08002be10318}
 Provider=%Vendor% 
 CatalogFile=xennet.cat
 DriverVer=01/01/1900,0.0.0.0
-BootCritical=1
+DriverPackageDisplayName=%DiskDesc%
 
 [DestinationDirs] 
 DefaultDestDir=12 
@@ -170,6 +170,7 @@ HKR, Ndi\params\*RSS\enum,                        "1",        0, %Enabled%
 AddService=xennet,0x02,XenNet_Service,XenNet_EventLog
 
 [XenNet_Service] 
+DisplayName=%XenNetDesc%
 ServiceType=%SERVICE_KERNEL_DRIVER% 
 StartType=%SERVICE_DEMAND_START% 
 ErrorControl=%SERVICE_ERROR_NORMAL% 
