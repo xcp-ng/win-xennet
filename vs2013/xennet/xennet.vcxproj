@@ -27,7 +27,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
-      <PreprocessorDefinitions>__MODULE__="XENNET";NDIS_MINIPORT_DRIVER;NDIS_WDM=1;NDIS61_MINIPORT=1;POOL_NX_OPTIN=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>__MODULE__="XENNET";NDIS_MINIPORT_DRIVER;NDIS_WDM=1;NDIS61_MINIPORT=1;POOL_NX_OPTIN=1;NT_PROCESSOR_GROUPS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(WindowsSdkDir)\include\km;..\..\include;..\..\include\xen;</AdditionalIncludeDirectories>
       <WarningLevel>EnableAllWarnings</WarningLevel>
       <DisableSpecificWarnings>4711;4548;4820;4668;4255;6001;6054;28196;%(DisableSpecificWarnings)</DisableSpecificWarnings>
@@ -39,7 +39,7 @@
     </ResourceCompile>
     <Link>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
-      <AdditionalDependencies>$(DDK_LIB_PATH)\ndis.lib;$(DDK_LIB_PATH)/libcntpr.lib;$(DDK_LIB_PATH)/aux_klib.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(DDK_LIB_PATH)\ndis.lib;$(DDK_LIB_PATH)/libcntpr.lib;$(DDK_LIB_PATH)/aux_klib.lib;$(DDK_LIB_PATH)/procgrp.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <EnableCOMDATFolding>false</EnableCOMDATFolding>
     </Link>
     <Inf>

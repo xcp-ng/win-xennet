@@ -30,6 +30,7 @@
  */
 
 #include <ndis.h>
+#include <procgrp.h>
 #include <tcpip.h>
 #include <xen.h>
 

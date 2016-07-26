@@ -30,6 +30,7 @@
  */
 
 #include <ndis.h>
+#include <procgrp.h>
 #include <version.h>
 
 #include "driver.h"
@@ -197,6 +198,7 @@ DriverEntry (
     ULONG FailDeviceControl;
 
     ExInitializeDriverRuntime(DrvRtPoolNxOptIn);
+    WdmlibProcgrpInitialize();
 
     Trace("====>\n");
 
