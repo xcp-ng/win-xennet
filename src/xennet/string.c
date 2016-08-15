@@ -435,6 +435,9 @@ StringVPrintf(
     if (!NT_SUCCESS(status))
         goto fail2;
 
+    // Length should not include the NUL terminator
+    --String->Length;
+
     return STATUS_SUCCESS;
 
 fail2:

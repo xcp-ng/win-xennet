@@ -69,6 +69,9 @@ typedef struct _XENNET_RSS {
     BOOLEAN ScaleEnabled;
     ULONG   Types;
     UCHAR   Key[NDIS_RSS_HASH_SECRET_KEY_MAX_SIZE_REVISION_1];
+    ULONG   KeySize;
+    CCHAR   Table[NDIS_RSS_INDIRECTION_TABLE_MAX_SIZE_REVISION_1];
+    ULONG   TableSize;
 } XENNET_RSS, *PXENNET_RSS;
 
 struct _XENNET_ADAPTER {
@@ -87,6 +90,7 @@ struct _XENNET_ADAPTER {
     NDIS_OFFLOAD                Offload;
     PROPERTIES                  Properties;
     XENNET_RSS                  Rss;
+    NDIS_LINK_STATE             LinkState;
 
     PXENNET_RECEIVER            Receiver;
     PXENNET_TRANSMITTER         Transmitter;
@@ -257,71 +261,79 @@ AdapterVifCallback(
     va_end(Arguments);
 }
 
-#define DISPLAY_OFFLOAD(_Offload)                                   \
-        do {                                                        \
-            Info("%s\n", #_Offload);                                \
-            if ((_Offload).Checksum.IPv4Receive.IpChecksum)         \
-                Info("Checksum.IPv4Receive.IpChecksum ON\n");       \
-            else                                                    \
-                Info("Checksum.IPv4Receive.IpChecksum OFF\n");      \
-                                                                    \
-            if ((_Offload).Checksum.IPv4Receive.TcpChecksum)        \
-                Info("Checksum.IPv4Receive.TcpChecksum ON\n");      \
-            else                                                    \
-                Info("Checksum.IPv4Receive.TcpChecksum OFF\n");     \
-                                                                    \
-            if ((_Offload).Checksum.IPv4Receive.UdpChecksum)        \
-                Info("Checksum.IPv4Receive.UdpChecksum ON\n");      \
-            else                                                    \
-                Info("Checksum.IPv4Receive.UdpChecksum OFF\n");     \
-                                                                    \
-            if ((_Offload).Checksum.IPv6Receive.TcpChecksum)        \
-                Info("Checksum.IPv6Receive.TcpChecksum ON\n");      \
-            else                                                    \
-                Info("Checksum.IPv6Receive.TcpChecksum OFF\n");     \
-                                                                    \
-            if ((_Offload).Checksum.IPv6Receive.UdpChecksum)        \
-                Info("Checksum.IPv6Receive.UdpChecksum ON\n");      \
-            else                                                    \
-                Info("Checksum.IPv6Receive.UdpChecksum OFF\n");     \
-                                                                    \
-            if ((_Offload).Checksum.IPv4Transmit.IpChecksum)        \
-                Info("Checksum.IPv4Transmit.IpChecksum ON\n");      \
-            else                                                    \
-                Info("Checksum.IPv4Transmit.IpChecksum OFF\n");     \
-                                                                    \
-            if ((_Offload).Checksum.IPv4Transmit.TcpChecksum)       \
-                Info("Checksum.IPv4Transmit.TcpChecksum ON\n");     \
-            else                                                    \
-                Info("Checksum.IPv4Transmit.TcpChecksum OFF\n");    \
-                                                                    \
-            if ((_Offload).Checksum.IPv4Transmit.UdpChecksum)       \
-                Info("Checksum.IPv4Transmit.UdpChecksum ON\n");     \
-            else                                                    \
-                Info("Checksum.IPv4Transmit.UdpChecksum OFF\n");    \
-                                                                    \
-            if ((_Offload).Checksum.IPv6Transmit.TcpChecksum)       \
-                Info("Checksum.IPv6Transmit.TcpChecksum ON\n");     \
-            else                                                    \
-                Info("Checksum.IPv6Transmit.TcpChecksum OFF\n");    \
-                                                                    \
-            if ((_Offload).Checksum.IPv6Transmit.UdpChecksum)       \
-                Info("Checksum.IPv6Transmit.UdpChecksum ON\n");     \
-            else                                                    \
-                Info("Checksum.IPv6Transmit.UdpChecksum OFF\n");    \
-                                                                    \
-            if ((_Offload).LsoV2.IPv4.MaxOffLoadSize != 0)          \
-                Info("LsoV2.IPv4.MaxOffLoadSize = %u\n",            \
-                     (_Offload).LsoV2.IPv4.MaxOffLoadSize);         \
-            else                                                    \
-                Info("LsoV2.IPv4 OFF\n");                           \
-                                                                    \
-            if ((_Offload).LsoV2.IPv6.MaxOffLoadSize != 0)          \
-                Info("LsoV2.IPv6.MaxOffLoadSize = %u\n",            \
-                     (_Offload).LsoV2.IPv6.MaxOffLoadSize);         \
-            else                                                    \
-                Info("LsoV2.IPv6 OFF\n");                           \
-        } while (FALSE)
+static VOID
+DisplayOffload(
+    IN  const CHAR      *Type,
+    IN  PNDIS_OFFLOAD   Offload
+    )
+{
+    Trace("%s:\n", Type);
+
+    if (Offload->Checksum.IPv4Receive.IpChecksum)
+        Trace("Checksum.IPv4Receive.IpChecksum ON\n");
+    else
+        Trace("Checksum.IPv4Receive.IpChecksum OFF\n");
+
+    if (Offload->Checksum.IPv4Receive.TcpChecksum)
+        Trace("Checksum.IPv4Receive.TcpChecksum ON\n");
+    else
+        Trace("Checksum.IPv4Receive.TcpChecksum OFF\n");
+
+    if (Offload->Checksum.IPv4Receive.UdpChecksum)
+        Trace("Checksum.IPv4Receive.UdpChecksum ON\n");
+    else
+        Trace("Checksum.IPv4Receive.UdpChecksum OFF\n");
+
+    if (Offload->Checksum.IPv6Receive.TcpChecksum)
+        Trace("Checksum.IPv6Receive.TcpChecksum ON\n");
+    else
+        Trace("Checksum.IPv6Receive.TcpChecksum OFF\n");
+
+    if (Offload->Checksum.IPv6Receive.UdpChecksum)
+        Trace("Checksum.IPv6Receive.UdpChecksum ON\n");
+    else
+        Trace("Checksum.IPv6Receive.UdpChecksum OFF\n");
+
+    if (Offload->Checksum.IPv4Transmit.IpChecksum)
+        Trace("Checksum.IPv4Transmit.IpChecksum ON\n");
+    else
+        Trace("Checksum.IPv4Transmit.IpChecksum OFF\n");
+
+    if (Offload->Checksum.IPv4Transmit.TcpChecksum)
+        Trace("Checksum.IPv4Transmit.TcpChecksum ON\n");
+    else
+        Trace("Checksum.IPv4Transmit.TcpChecksum OFF\n");
+
+    if (Offload->Checksum.IPv4Transmit.UdpChecksum)
+        Trace("Checksum.IPv4Transmit.UdpChecksum ON\n");
+    else
+        Trace("Checksum.IPv4Transmit.UdpChecksum OFF\n");
+
+    if (Offload->Checksum.IPv6Transmit.TcpChecksum)
+        Trace("Checksum.IPv6Transmit.TcpChecksum ON\n");
+    else
+        Trace("Checksum.IPv6Transmit.TcpChecksum OFF\n");
+
+    if (Offload->Checksum.IPv6Transmit.UdpChecksum)
+        Trace("Checksum.IPv6Transmit.UdpChecksum ON\n");
+    else
+        Trace("Checksum.IPv6Transmit.UdpChecksum OFF\n");
+
+    if (Offload->LsoV2.IPv4.MaxOffLoadSize != 0)
+        Trace("LsoV2.IPv4.MaxOffLoadSize = %u\n",
+             Offload->LsoV2.IPv4.MaxOffLoadSize);
+    else
+        Trace("LsoV2.IPv4 OFF\n");
+
+    if (Offload->LsoV2.IPv6.MaxOffLoadSize != 0)
+        Trace("LsoV2.IPv6.MaxOffLoadSize = %u\n",
+             Offload->LsoV2.IPv6.MaxOffLoadSize);
+    else
+        Trace("LsoV2.IPv6 OFF\n");
+}
+
+#define DISPLAY_OFFLOAD(_Offload) \
+    DisplayOffload(#_Offload, &_Offload);
 
 static VOID
 AdapterIndicateOffloadChanged(
@@ -329,102 +341,102 @@ AdapterIndicateOffloadChanged(
     )
 {
     NDIS_STATUS_INDICATION      Status;
-    NDIS_OFFLOAD                Offload;
+    NDIS_OFFLOAD                Current;
     PXENVIF_VIF_OFFLOAD_OPTIONS RxOptions;
     PXENVIF_VIF_OFFLOAD_OPTIONS TxOptions;
 
     RxOptions = ReceiverOffloadOptions(Adapter->Receiver);
     TxOptions = TransmitterOffloadOptions(Adapter->Transmitter);
 
-    RtlZeroMemory(&Offload, sizeof(Offload));
-    Offload.Header.Type = NDIS_OBJECT_TYPE_OFFLOAD;
-    Offload.Header.Revision = NDIS_OFFLOAD_REVISION_2;
-    Offload.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_2;
+    RtlZeroMemory(&Current, sizeof(Current));
+    Current.Header.Type = NDIS_OBJECT_TYPE_OFFLOAD;
+    Current.Header.Revision = NDIS_OFFLOAD_REVISION_2;
+    Current.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_2;
 
-    Offload.Checksum.IPv4Receive.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
+    Current.Checksum.IPv4Receive.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
 
     if (RxOptions->OffloadIpVersion4HeaderChecksum) {
-        Offload.Checksum.IPv4Receive.IpChecksum = 1;
-        Offload.Checksum.IPv4Receive.IpOptionsSupported = 1;
+        Current.Checksum.IPv4Receive.IpChecksum = 1;
+        Current.Checksum.IPv4Receive.IpOptionsSupported = 1;
     }
     if (RxOptions->OffloadIpVersion4TcpChecksum) {
-        Offload.Checksum.IPv4Receive.TcpChecksum = 1;
-        Offload.Checksum.IPv4Receive.TcpOptionsSupported = 1;
+        Current.Checksum.IPv4Receive.TcpChecksum = 1;
+        Current.Checksum.IPv4Receive.TcpOptionsSupported = 1;
     }
     if (RxOptions->OffloadIpVersion4UdpChecksum) {
-        Offload.Checksum.IPv4Receive.UdpChecksum = 1;
+        Current.Checksum.IPv4Receive.UdpChecksum = 1;
     }
 
-    Offload.Checksum.IPv6Receive.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
-    Offload.Checksum.IPv6Receive.IpExtensionHeadersSupported = 1;
+    Current.Checksum.IPv6Receive.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
+    Current.Checksum.IPv6Receive.IpExtensionHeadersSupported = 1;
 
     if (RxOptions->OffloadIpVersion6TcpChecksum) {
-        Offload.Checksum.IPv6Receive.TcpChecksum = 1;
-        Offload.Checksum.IPv6Receive.TcpOptionsSupported = 1;
+        Current.Checksum.IPv6Receive.TcpChecksum = 1;
+        Current.Checksum.IPv6Receive.TcpOptionsSupported = 1;
     }
     if (RxOptions->OffloadIpVersion6UdpChecksum) {
-        Offload.Checksum.IPv6Receive.UdpChecksum = 1;
+        Current.Checksum.IPv6Receive.UdpChecksum = 1;
     }
 
     XENVIF_VIF(ReceiverSetOffloadOptions,
                &Adapter->VifInterface,
                *RxOptions);
 
-    Offload.Checksum.IPv4Transmit.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
+    Current.Checksum.IPv4Transmit.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
 
     if (TxOptions->OffloadIpVersion4HeaderChecksum) {
-        Offload.Checksum.IPv4Transmit.IpChecksum = 1;
-        Offload.Checksum.IPv4Transmit.IpOptionsSupported = 1;
+        Current.Checksum.IPv4Transmit.IpChecksum = 1;
+        Current.Checksum.IPv4Transmit.IpOptionsSupported = 1;
     }
     if (TxOptions->OffloadIpVersion4TcpChecksum) {
-        Offload.Checksum.IPv4Transmit.TcpChecksum = 1;
-        Offload.Checksum.IPv4Transmit.TcpOptionsSupported = 1;
+        Current.Checksum.IPv4Transmit.TcpChecksum = 1;
+        Current.Checksum.IPv4Transmit.TcpOptionsSupported = 1;
     }
     if (TxOptions->OffloadIpVersion4UdpChecksum) {
-        Offload.Checksum.IPv4Transmit.UdpChecksum = 1;
+        Current.Checksum.IPv4Transmit.UdpChecksum = 1;
     }
 
-    Offload.Checksum.IPv6Transmit.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
-    Offload.Checksum.IPv6Transmit.IpExtensionHeadersSupported = 1;
+    Current.Checksum.IPv6Transmit.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
+    Current.Checksum.IPv6Transmit.IpExtensionHeadersSupported = 1;
 
     if (TxOptions->OffloadIpVersion6TcpChecksum) {
-        Offload.Checksum.IPv6Transmit.TcpChecksum = 1;
-        Offload.Checksum.IPv6Transmit.TcpOptionsSupported = 1;
+        Current.Checksum.IPv6Transmit.TcpChecksum = 1;
+        Current.Checksum.IPv6Transmit.TcpOptionsSupported = 1;
     }
     if (TxOptions->OffloadIpVersion6UdpChecksum) {
-        Offload.Checksum.IPv6Transmit.UdpChecksum = 1;
+        Current.Checksum.IPv6Transmit.UdpChecksum = 1;
     }
 
     if (TxOptions->OffloadIpVersion4LargePacket) {
         XENVIF_VIF(TransmitterQueryLargePacketSize,
                    &Adapter->VifInterface,
                    4,
-                   &Offload.LsoV2.IPv4.MaxOffLoadSize);
-        Offload.LsoV2.IPv4.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
-        Offload.LsoV2.IPv4.MinSegmentCount = 2;
+                   &Current.LsoV2.IPv4.MaxOffLoadSize);
+        Current.LsoV2.IPv4.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
+        Current.LsoV2.IPv4.MinSegmentCount = 2;
     }
 
     if (TxOptions->OffloadIpVersion6LargePacket) {
         XENVIF_VIF(TransmitterQueryLargePacketSize,
                    &Adapter->VifInterface,
                    6,
-                   &Offload.LsoV2.IPv6.MaxOffLoadSize);
-        Offload.LsoV2.IPv6.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
-        Offload.LsoV2.IPv6.MinSegmentCount = 2;
-        Offload.LsoV2.IPv6.IpExtensionHeadersSupported = 1;
-        Offload.LsoV2.IPv6.TcpOptionsSupported = 1;
+                   &Current.LsoV2.IPv6.MaxOffLoadSize);
+        Current.LsoV2.IPv6.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
+        Current.LsoV2.IPv6.MinSegmentCount = 2;
+        Current.LsoV2.IPv6.IpExtensionHeadersSupported = 1;
+        Current.LsoV2.IPv6.TcpOptionsSupported = 1;
     }
 
-    DISPLAY_OFFLOAD(Offload);
+    DISPLAY_OFFLOAD(Current);
 
-    Adapter->Offload = Offload;
+    Adapter->Offload = Current;
 
     RtlZeroMemory(&Status, sizeof(Status));
     Status.Header.Type = NDIS_OBJECT_TYPE_STATUS_INDICATION;
     Status.Header.Revision = NDIS_STATUS_INDICATION_REVISION_1;
     Status.Header.Size = NDIS_SIZEOF_STATUS_INDICATION_REVISION_1;
     Status.StatusCode = NDIS_STATUS_TASK_OFFLOAD_CURRENT_CONFIG;
-    Status.StatusBuffer = &Offload;
+    Status.StatusBuffer = &Current;
     Status.StatusBufferSize = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_2;
 
     NdisMIndicateStatusEx(Adapter->NdisAdapterHandle, &Status);
@@ -716,6 +728,13 @@ AdapterUpdateRSSTable(
         return NDIS_STATUS_SUCCESS;
     }
 
+    if (TableSize > sizeof (Adapter->Rss.Table))
+        return NDIS_STATUS_INVALID_DATA;
+
+    RtlZeroMemory(Adapter->Rss.Table, sizeof (Adapter->Rss.Table)) ;
+    RtlCopyMemory(Adapter->Rss.Table, Table, TableSize);
+    Adapter->Rss.TableSize = TableSize;
+
     RtlZeroMemory(Mapping, sizeof (Mapping));
     for (Index = 0; Index < TableSize; Index++) {
         Mapping[Index].Group = 0;
@@ -744,8 +763,12 @@ AdapterUpdateRSSKey(
         return NDIS_STATUS_SUCCESS;
     }
 
-    RtlZeroMemory(Adapter->Rss.Key, NDIS_RSS_HASH_SECRET_KEY_MAX_SIZE_REVISION_1);
+    if (KeySize > sizeof (Adapter->Rss.Key))
+        return NDIS_STATUS_INVALID_DATA;
+
+    RtlZeroMemory(Adapter->Rss.Key, sizeof (Adapter->Rss.Key));
     RtlCopyMemory(Adapter->Rss.Key, Key, KeySize);
+    Adapter->Rss.KeySize = KeySize;
 
     status = XENVIF_VIF(ReceiverUpdateHashParameters,
                         &Adapter->VifInterface,
@@ -810,6 +833,107 @@ AdapterUpdateRSSHash(
     return (NT_SUCCESS(status)) ? NDIS_STATUS_SUCCESS : NDIS_STATUS_INVALID_DATA;
 }
 
+static VOID
+DisplayRss(
+    IN  PXENNET_RSS Rss
+    )
+{
+    Trace("HashEnabled: %s\n", (Rss->HashEnabled) ? "TRUE" : "FALSE");
+    Trace("ScaleEnabled: %s\n", (Rss->ScaleEnabled) ? "TRUE" : "FALSE");
+
+    if (Rss->Types != 0) {
+        Trace("Types:\n");
+        if (Rss->Types & 1 << XENVIF_PACKET_HASH_TYPE_IPV4)
+            Trace("- IPv4\n");
+        if (Rss->Types & 1 << XENVIF_PACKET_HASH_TYPE_IPV4_TCP)
+            Trace("- IPv4 + TCP\n");
+        if (Rss->Types & 1 << XENVIF_PACKET_HASH_TYPE_IPV6)
+            Trace("- IPv6\n");
+        if (Rss->Types & 1 << XENVIF_PACKET_HASH_TYPE_IPV6_TCP)
+            Trace("- IPv6 + TCP\n");
+    }
+
+    if (Rss->KeySize != 0) {
+        ULONG   Index;
+
+        Trace("Key:\n");
+
+        for (Index = 0; Index < Rss->KeySize; ) {
+            CHAR    Buffer[80];
+            STRING  String;
+            ULONG   Count;
+            ULONG   Column;
+
+            String.Buffer = Buffer;
+            String.MaximumLength = sizeof (Buffer);
+            String.Length = 0;
+
+            Count = 8;
+            if (Index + Count >= Rss->KeySize)
+                Count = Rss->KeySize - Index;
+
+            (VOID) StringPrintf(&String, "[%2u - %2u]: ",
+                                Index,
+                                Index + Count - 1);
+
+            String.Buffer += String.Length;
+            String.MaximumLength -= String.Length;
+            String.Length = 0;
+
+            for (Column = 0; Column < Count; Column++, Index++) {
+                (VOID) StringPrintf(&String, "%02x ",
+                                    Rss->Key[Index]);
+
+                String.Buffer += String.Length;
+                String.MaximumLength -= String.Length;
+                String.Length = 0;
+            }
+
+            Trace("%s\n", Buffer);
+        }
+    }
+
+    if (Rss->TableSize != 0) {
+        ULONG   Index;
+
+        Trace("Table:\n");
+
+        for (Index = 0; Index < Rss->TableSize; ) {
+            CHAR    Buffer[80];
+            STRING  String;
+            ULONG   Count;
+            ULONG   Column;
+
+            String.Buffer = Buffer;
+            String.MaximumLength = sizeof (Buffer);
+            String.Length = 0;
+
+            Count = 8;
+            if (Index + Count >= Rss->TableSize)
+                Count = Rss->TableSize - Index;
+
+            (VOID) StringPrintf(&String, "[%2u - %2u]: ",
+                                Index,
+                                Index + Count - 1);
+
+            String.Buffer += String.Length;
+            String.MaximumLength -= String.Length;
+            String.Length = 0;
+
+            for (Column = 0; Column < Count; Column++, Index++) {
+                (VOID) StringPrintf(&String, "%02x ",
+                                    Rss->Table[Index]);
+
+                String.Buffer += String.Length;
+                String.MaximumLength -= String.Length;
+                String.Length = 0;
+            }
+
+            Trace("%s\n", Buffer);
+        }
+    }
+}
+
 static NDIS_STATUS
 AdapterGetReceiveScaleParameters(
     IN  PXENNET_ADAPTER                 Adapter,
@@ -860,6 +984,8 @@ AdapterGetReceiveScaleParameters(
             goto fail;
     }
 
+    DisplayRss(&Adapter->Rss);
+
     return NDIS_STATUS_SUCCESS;
 
 fail:
@@ -905,6 +1031,8 @@ AdapterGetReceiveHashParameters(
         if (ndisStatus != NDIS_STATUS_SUCCESS)
             goto fail;
     }
+
+    DisplayRss(&Adapter->Rss);
 
     return NDIS_STATUS_SUCCESS;
 
@@ -1325,7 +1453,7 @@ AdapterReceiveHash(
         HashType |= NDIS_HASH_IPV6;
 
     Params->HashInformation = NDIS_RSS_HASH_INFO_FROM_TYPE_AND_FUNC(HashType, HashFunc);
-    Params->HashSecretKeySize = sizeof (Adapter->Rss.Key);
+    Params->HashSecretKeySize = (USHORT)Adapter->Rss.KeySize;
     Params->HashSecretKeyOffset = NDIS_SIZEOF_RECEIVE_HASH_PARAMETERS_REVISION_1;
 
     RtlCopyMemory((PUCHAR)Params + Params->HashSecretKeyOffset,
@@ -1333,7 +1461,7 @@ AdapterReceiveHash(
                   Params->HashSecretKeySize);
 
     *BytesWritten = NDIS_SIZEOF_RECEIVE_HASH_PARAMETERS_REVISION_1 +
-                    sizeof (Adapter->Rss.Key);
+                    Adapter->Rss.KeySize;
     return NDIS_STATUS_SUCCESS;
 
 fail1:
@@ -1836,6 +1964,25 @@ AdapterDisable(
     XENBUS_STORE(Release, &Adapter->StoreInterface);
 }
 
+static VOID
+DisplayLinkState(
+    IN  PNDIS_LINK_STATE    LinkState
+    )
+{
+    if (LinkState->MediaConnectState == MediaConnectStateUnknown) {
+        Info("LINK: STATE UNKNOWN\n");
+    } else if (LinkState->MediaConnectState == MediaConnectStateDisconnected) {
+        Info("LINK: DOWN\n");
+    } else {
+        if (LinkState->MediaDuplexState == MediaDuplexStateHalf)
+            Info("LINK: UP: SPEED=%u DUPLEX=HALF\n", LinkState->RcvLinkSpeed);
+        else if (LinkState->MediaDuplexState == MediaDuplexStateFull)
+            Info("LINK: UP: SPEED=%u DUPLEX=FULL\n", LinkState->RcvLinkSpeed);
+        else
+            Info("LINK: UP: SPEED=%u DUPLEX=UNKNOWN\n", LinkState->RcvLinkSpeed);
+    }
+}
+
 VOID
 AdapterMediaStateChange(
     IN  PXENNET_ADAPTER     Adapter
@@ -1855,22 +2002,14 @@ AdapterMediaStateChange(
                &LinkState.RcvLinkSpeed,
                &LinkState.MediaDuplexState);
 
-    if (LinkState.MediaConnectState == MediaConnectStateUnknown) {
-        Info("LINK: STATE UNKNOWN\n");
-    } else if (LinkState.MediaConnectState == MediaConnectStateDisconnected) {
-        Info("LINK: DOWN\n");
-    } else {
-        ASSERT3U(LinkState.MediaConnectState, ==, MediaConnectStateConnected);
-
-        if (LinkState.MediaDuplexState == MediaDuplexStateHalf)
-            Info("LINK: UP: SPEED=%u DUPLEX=HALF\n", LinkState.RcvLinkSpeed);
-        else if (LinkState.MediaDuplexState == MediaDuplexStateFull)
-            Info("LINK: UP: SPEED=%u DUPLEX=FULL\n", LinkState.RcvLinkSpeed);
-        else
-            Info("LINK: UP: SPEED=%u DUPLEX=UNKNOWN\n", LinkState.RcvLinkSpeed);
-    }
-
     LinkState.XmitLinkSpeed = LinkState.RcvLinkSpeed;
+
+    if (!RtlEqualMemory(&Adapter->LinkState,
+                       &LinkState,
+                       sizeof (LinkState)))
+        DisplayLinkState(&LinkState);
+
+    Adapter->LinkState = LinkState;
 
     RtlZeroMemory(&StatusIndication, sizeof(StatusIndication));
     StatusIndication.Header.Type = NDIS_OBJECT_TYPE_STATUS_INDICATION;
@@ -2013,6 +2152,7 @@ AdapterSetInformation(
 
     case OID_GEN_INTERRUPT_MODERATION:
     case OID_GEN_MACHINE_NAME:
+    case OID_GEN_NETWORK_LAYER_ADDRESSES:
         Warn = FALSE;
         /*FALLTHRU*/
     default:
@@ -2558,7 +2698,7 @@ AdapterQueryInformation(
 
     case OID_GEN_RECEIVE_HASH:
         BytesNeeded = NDIS_SIZEOF_RECEIVE_HASH_PARAMETERS_REVISION_1 +
-                      sizeof (Adapter->Rss.Key);
+                      Adapter->Rss.KeySize;
         ndisStatus = AdapterReceiveHash(Adapter,
                                         (PNDIS_RECEIVE_HASH_PARAMETERS)Buffer,
                                         BufferLength,
@@ -2679,7 +2819,7 @@ fail1:
         else                                            \
             field = defaultval;                         \
                                                         \
-        Info("%ws = %d\n", name, field);                \
+        Trace("%ws = %d\n", name, field);               \
     } while (FALSE);
 
 static NDIS_STATUS
@@ -2858,6 +2998,8 @@ AdapterSetGeneralAttributes(
                &Adapter->VifInterface,
                &Rss.NumberOfReceiveQueues);
     Rss.NumberOfInterruptMessages = Rss.NumberOfReceiveQueues;
+
+    Info("RSS ENABLED (%u QUEUES)\n", Rss.NumberOfReceiveQueues);
 
     Adapter->Rss.Supported = TRUE;
     Attribs.RecvScaleCapabilities = &Rss;
