@@ -267,6 +267,7 @@ TransmitterSendNetBufferLists(
         XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
         USHORT                      TagControlInformation;
         USHORT                      MaximumSegmentSize;
+        XENVIF_PACKET_HASH          Hash;
 
         ListNext = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
         NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
@@ -278,6 +279,39 @@ TransmitterSendNetBufferLists(
 
         OffloadOptions.Value &= Transmitter->OffloadOptions.Value;
 
+        switch (NET_BUFFER_LIST_GET_HASH_FUNCTION(NetBufferList)) {
+        case NdisHashFunctionToeplitz:
+            Hash.Algorithm = XENVIF_PACKET_HASH_ALGORITHM_TOEPLITZ;
+            break;
+
+        default:
+            Hash.Algorithm = XENVIF_PACKET_HASH_ALGORITHM_NONE;
+            break;
+        }
+
+        switch (NET_BUFFER_LIST_GET_HASH_TYPE(NetBufferList)) {
+        case NDIS_HASH_IPV4:
+            Hash.Type = XENVIF_PACKET_HASH_TYPE_IPV4;
+            break;
+
+        case NDIS_HASH_TCP_IPV4:
+            Hash.Type = XENVIF_PACKET_HASH_TYPE_IPV4_TCP;
+            break;
+
+        case NDIS_HASH_IPV6:
+            Hash.Type = XENVIF_PACKET_HASH_TYPE_IPV6;
+            break;
+
+        case NDIS_HASH_TCP_IPV6:
+            Hash.Type = XENVIF_PACKET_HASH_TYPE_IPV6_TCP;
+            break;
+
+        default:
+                break;
+        }
+
+        Hash.Value = NET_BUFFER_LIST_GET_HASH_VALUE(NetBufferList);
+
         ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
         RtlZeroMemory(ListReserved, sizeof (NET_BUFFER_LIST_RESERVED));
 
@@ -287,43 +321,9 @@ TransmitterSendNetBufferLists(
         while (NetBuffer != NULL) {
             PNET_BUFFER         NetBufferListNext = NET_BUFFER_NEXT_NB(NetBuffer);
             PVOID               Cookie = NetBufferList;
-            XENVIF_PACKET_HASH  Hash;
             NTSTATUS            status;
 
             __TransmitterGetNetBufferList(Transmitter, NetBufferList);
-
-            switch (NET_BUFFER_LIST_GET_HASH_FUNCTION(NetBufferList)) {
-            case NdisHashFunctionToeplitz:
-                Hash.Algorithm = XENVIF_PACKET_HASH_ALGORITHM_TOEPLITZ;
-                break;
-
-            default:
-                Hash.Algorithm = XENVIF_PACKET_HASH_ALGORITHM_NONE;
-                break;
-            }
-
-            switch (NET_BUFFER_LIST_GET_HASH_TYPE(NetBufferList)) {
-            case NDIS_HASH_IPV4:
-                Hash.Type = XENVIF_PACKET_HASH_TYPE_IPV4;
-                break;
-
-            case NDIS_HASH_TCP_IPV4:
-                Hash.Type = XENVIF_PACKET_HASH_TYPE_IPV4_TCP;
-                break;
-
-            case NDIS_HASH_IPV6:
-                Hash.Type = XENVIF_PACKET_HASH_TYPE_IPV6;
-                break;
-
-            case NDIS_HASH_TCP_IPV6:
-                Hash.Type = XENVIF_PACKET_HASH_TYPE_IPV6_TCP;
-                break;
-
-            default:
-                break;
-            }
-
-            Hash.Value = NET_BUFFER_LIST_GET_HASH_VALUE(NetBufferList);
 
             status = XENVIF_VIF(TransmitterQueuePacket,
                                 AdapterGetVifInterface(Transmitter->Adapter),
@@ -334,6 +334,7 @@ TransmitterSendNetBufferLists(
                                 MaximumSegmentSize,
                                 TagControlInformation,
                                 &Hash,
+                                (NetBufferListNext != NULL) ? TRUE : FALSE,
                                 Cookie);
             if (!NT_SUCCESS(status)) {
                 __TransmitterReturnPacket(Transmitter, Cookie,

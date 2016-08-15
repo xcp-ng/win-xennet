@@ -228,6 +228,7 @@ AdapterVifCallback(
         USHORT                          TagControlInformation;
         PXENVIF_PACKET_INFO             Info;
         PXENVIF_PACKET_HASH             Hash;
+        BOOLEAN                         More;
         PVOID                           Cookie;
 
         Mdl = va_arg(Arguments, PMDL);
@@ -238,6 +239,7 @@ AdapterVifCallback(
         TagControlInformation = va_arg(Arguments, USHORT);
         Info = va_arg(Arguments, PXENVIF_PACKET_INFO);
         Hash = va_arg(Arguments, PXENVIF_PACKET_HASH);
+        More = va_arg(Arguments, BOOLEAN);
         Cookie = va_arg(Arguments, PVOID);
 
         ReceiverQueuePacket(Adapter->Receiver,
@@ -249,6 +251,7 @@ AdapterVifCallback(
                             TagControlInformation,
                             Info,
                             Hash,
+                            More,
                             Cookie);
         break;
     }
