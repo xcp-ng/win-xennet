@@ -121,7 +121,6 @@ __ReceiverAllocateNetBufferList(
     )
 {
     PNET_BUFFER_LIST            NetBufferList;
-    PNET_BUFFER_LIST_RESERVED   ListReserved;
 
     ASSERT3U(KeGetCurrentIrql(), ==, DISPATCH_LEVEL);
 
@@ -152,9 +151,13 @@ __ReceiverAllocateNetBufferList(
         ASSERT(IMPLY(NetBufferList != NULL, NET_BUFFER_LIST_NEXT_NBL(NetBufferList) == NULL));
     }
 
-    ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
-    ASSERT3P(ListReserved->Cookie, ==, NULL);
-    ListReserved->Cookie = Cookie;
+    if (NetBufferList != NULL) {
+        PNET_BUFFER_LIST_RESERVED   ListReserved;
+
+        ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
+        ASSERT3P(ListReserved->Cookie, ==, NULL);
+        ListReserved->Cookie = Cookie;
+    }
 
     return NetBufferList;
 }        
