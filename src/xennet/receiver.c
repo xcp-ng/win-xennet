@@ -46,7 +46,6 @@ struct _XENNET_RECEIVER {
     PNET_BUFFER_LIST            PutList;
     PNET_BUFFER_LIST            GetList[HVM_MAX_VCPUS];
     LONG                        InNDIS;
-    LONG                        InNDISMax;
     XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
 };
 
@@ -286,19 +285,6 @@ __ReceiverPushPacket(
     Flags = NDIS_RECEIVE_FLAGS_DISPATCH_LEVEL;
     if (InNDIS > IN_NDIS_MAX)
         Flags |= NDIS_RECEIVE_FLAGS_RESOURCES;
-
-    for (;;) {
-        LONG    InNDISMax;
-
-        InNDISMax = Receiver->InNDISMax;
-        KeMemoryBarrier();
-
-        if (InNDIS <= InNDISMax)
-            break;
-
-        if (InterlockedCompareExchange(&Receiver->InNDISMax, InNDIS, InNDISMax) == InNDISMax)
-            break;
-    }
 
     NdisMIndicateReceiveNetBufferLists(AdapterGetHandle(Receiver->Adapter),
                                        NetBufferList,
