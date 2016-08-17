@@ -61,9 +61,9 @@ xennet_coinst_@MAJOR_VERSION@_@MINOR_VERSION@_@MICRO_VERSION@_@BUILD_NUMBER@.dll
 ; DisplayName		Section		DeviceID
 ; -----------		-------		--------
 
-%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@@VENDOR_DEVICE_ID@&DEV_NET&REV_0800000B
-%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@0001&DEV_NET&REV_0800000B
-%XenNetDesc%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@0002&DEV_NET&REV_0800000B
+%XenNetName%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@@VENDOR_DEVICE_ID@&DEV_NET&REV_0800000B
+%XenNetName%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@0001&DEV_NET&REV_0800000B
+%XenNetName%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@0002&DEV_NET&REV_0800000B
 
 [XenNet_Inst] 
 Characteristics=0x84
@@ -170,7 +170,7 @@ HKR, Ndi\params\*RSS\enum,                        "1",        0, %Enabled%
 AddService=xennet,0x02,XenNet_Service,XenNet_EventLog
 
 [XenNet_Service] 
-DisplayName=%XenNetDesc%
+DisplayName=%XenNetName%
 ServiceType=%SERVICE_KERNEL_DRIVER% 
 StartType=%SERVICE_DEMAND_START% 
 ErrorControl=%SERVICE_ERROR_NORMAL% 
@@ -199,7 +199,7 @@ HKR,,CoInstallers32,0x00010000,"xennet_coinst_@MAJOR_VERSION@_@MINOR_VERSION@_@M
 
 Vendor="@VENDOR_NAME@"
 DiskDesc="@PRODUCT_NAME@ PV Network Device Package" 
-XenNetDesc="@PRODUCT_NAME@ PV Network Device"
+XenNetName="@PRODUCT_NAME@ PV Network Device"
 IPChecksumOffloadIPv4="IPv4 Checksum Offload"
 TCPChecksumOffloadIPv4="TCP Checksum Offload (IPv4)"
 UDPChecksumOffloadIPv4="UDP Checksum Offload (IPv4)"
