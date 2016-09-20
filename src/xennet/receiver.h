@@ -58,6 +58,7 @@ ReceiverReturnNetBufferLists(
 extern VOID
 ReceiverQueuePacket(
     IN  PXENNET_RECEIVER                Receiver,
+    IN  ULONG                           Index,
     IN  PMDL                            Mdl,
     IN  ULONG                           Offset,
     IN  ULONG                           Length,

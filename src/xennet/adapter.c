@@ -220,6 +220,7 @@ AdapterVifCallback(
         break;
     }
     case XENVIF_RECEIVER_QUEUE_PACKET: {
+        ULONG                           Index;
         PMDL                            Mdl;
         ULONG                           Offset;
         ULONG                           Length;
@@ -231,6 +232,7 @@ AdapterVifCallback(
         BOOLEAN                         More;
         PVOID                           Cookie;
 
+        Index = va_arg(Arguments, ULONG);
         Mdl = va_arg(Arguments, PMDL);
         Offset = va_arg(Arguments, ULONG);
         Length = va_arg(Arguments, ULONG);
@@ -243,6 +245,7 @@ AdapterVifCallback(
         Cookie = va_arg(Arguments, PVOID);
 
         ReceiverQueuePacket(Adapter->Receiver,
+                            Index,
                             Mdl,
                             Offset,
                             Length,

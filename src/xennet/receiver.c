@@ -41,6 +41,7 @@
 #include "assert.h"
 
 typedef struct _XENNET_RECEIVER_QUEUE {
+    KSPIN_LOCK          Lock;
     PNET_BUFFER_LIST    Head;
     PNET_BUFFER_LIST    Tail;
     ULONG               Count;
@@ -52,7 +53,8 @@ struct _XENNET_RECEIVER {
     PNET_BUFFER_LIST            PutList;
     PNET_BUFFER_LIST            GetList[HVM_MAX_VCPUS];
     XENNET_RECEIVER_QUEUE       Queue[HVM_MAX_VCPUS];
-    LONG                        InNDIS;
+    LONG                        Indicated;
+    LONG                        Returned;
     XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
 };
 
@@ -185,24 +187,38 @@ __ReceiverReleaseNetBufferList(
 }
 
 static FORCEINLINE VOID
-__ReceiverReturnNetBufferList(
+__ReceiverReturnNetBufferLists(
     IN  PXENNET_RECEIVER    Receiver,
     IN  PNET_BUFFER_LIST    NetBufferList,
     IN  BOOLEAN             Cache
     )
 {
     PXENVIF_VIF_INTERFACE   VifInterface;
-    PVOID                   Cookie;
+    LONG                    Count;
 
     VifInterface = AdapterGetVifInterface(Receiver->Adapter);
 
-    Cookie = __ReceiverReleaseNetBufferList(Receiver, NetBufferList, Cache);
+    Count = 0;
 
-    XENVIF_VIF(ReceiverReturnPacket,
-               VifInterface,
-               Cookie);
+    while (NetBufferList != NULL) {
+        PNET_BUFFER_LIST        Next;
+        PVOID                   Cookie;
 
-    (VOID) InterlockedDecrement(&Receiver->InNDIS);
+        Next = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
+        NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
+
+        Cookie = __ReceiverReleaseNetBufferList(Receiver, NetBufferList, Cache);
+
+        XENVIF_VIF(ReceiverReturnPacket,
+                   VifInterface,
+                   Cookie);
+
+        Count++;
+
+        NetBufferList = Next;
+    }
+
+    (VOID) InterlockedAdd(&Receiver->Returned, Count);
 }
 
 static PNET_BUFFER_LIST
@@ -314,25 +330,32 @@ __ReceiverPushPackets(
     )
 {
     ULONG                   Flags;
-    LONG                    InNDIS;
+    LONG                    Indicated;
+    LONG                    Returned;
     PXENNET_RECEIVER_QUEUE  Queue;
     PNET_BUFFER_LIST        NetBufferList;
     ULONG                   Count;
 
-    InNDIS = InterlockedIncrement(&Receiver->InNDIS);
-
-    Flags = NDIS_RECEIVE_FLAGS_DISPATCH_LEVEL |
-            NDIS_RECEIVE_FLAGS_PERFECT_FILTERED;
-
-    if (InNDIS > IN_NDIS_MAX)
-        Flags |= NDIS_RECEIVE_FLAGS_RESOURCES;
-
     Queue = &Receiver->Queue[Index];
+
+    KeAcquireSpinLockAtDpcLevel(&Queue->Lock);
 
     NetBufferList = Queue->Head;
     Count = Queue->Count;
 
-    RtlZeroMemory(Queue, sizeof (XENNET_RECEIVER_QUEUE));
+    Queue->Tail = Queue->Head = NULL;
+    Queue->Count = 0;
+
+    KeReleaseSpinLockFromDpcLevel(&Queue->Lock);
+
+    Indicated = InterlockedAdd(&Receiver->Indicated, Count);
+    Returned = Receiver->Returned;
+
+    Flags = NDIS_RECEIVE_FLAGS_DISPATCH_LEVEL |
+            NDIS_RECEIVE_FLAGS_PERFECT_FILTERED;
+
+    if (Indicated - Returned > IN_NDIS_MAX)
+        Flags |= NDIS_RECEIVE_FLAGS_RESOURCES;
 
     NdisMIndicateReceiveNetBufferLists(AdapterGetHandle(Receiver->Adapter),
                                        NetBufferList,
@@ -341,7 +364,7 @@ __ReceiverPushPackets(
                                        Flags);
 
     if (Flags & NDIS_RECEIVE_FLAGS_RESOURCES)
-        (VOID) __ReceiverReturnNetBufferList(Receiver, NetBufferList, FALSE);
+        (VOID) __ReceiverReturnNetBufferLists(Receiver, NetBufferList, FALSE);
 }
 
 NDIS_STATUS
@@ -351,6 +374,7 @@ ReceiverInitialize(
     )
 {
     NET_BUFFER_LIST_POOL_PARAMETERS Params;
+    ULONG                           Index;
     NDIS_STATUS                     status;
 
     *Receiver = ExAllocatePoolWithTag(NonPagedPool,
@@ -380,6 +404,12 @@ ReceiverInitialize(
     if ((*Receiver)->NetBufferListPool == NULL)
         goto fail2;
 
+    for (Index = 0; Index < HVM_MAX_VCPUS; Index++) {
+        PXENNET_RECEIVER_QUEUE  Queue = &(*Receiver)->Queue[Index];
+
+        KeInitializeSpinLock(&Queue->Lock);
+    }
+
     return NDIS_STATUS_SUCCESS;
 
 fail2:
@@ -396,6 +426,8 @@ ReceiverTeardown(
     PNET_BUFFER_LIST        NetBufferList;
 
     ASSERT(Receiver != NULL);
+
+    ASSERT3U(Receiver->Returned, ==, Receiver->Indicated);
 
     for (Index = 0; Index < HVM_MAX_VCPUS; Index++) {
         NetBufferList = Receiver->GetList[Index];
@@ -441,21 +473,13 @@ ReceiverReturnNetBufferLists(
 {
     UNREFERENCED_PARAMETER(ReturnFlags);
 
-    while (NetBufferList != NULL) {
-        PNET_BUFFER_LIST        Next;
-
-        Next = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
-        NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
-
-        __ReceiverReturnNetBufferList(Receiver, NetBufferList, TRUE);
-
-        NetBufferList = Next;
-    }
+    __ReceiverReturnNetBufferLists(Receiver, NetBufferList, TRUE);
 }
 
 VOID
 ReceiverQueuePacket(
     IN  PXENNET_RECEIVER                Receiver,
+    IN  ULONG                           Index,
     IN  PMDL                            Mdl,
     IN  ULONG                           Offset,
     IN  ULONG                           Length,
@@ -470,7 +494,6 @@ ReceiverQueuePacket(
 {
     PXENVIF_VIF_INTERFACE               VifInterface;
     PNET_BUFFER_LIST                    NetBufferList;
-    ULONG                               Index;
     PXENNET_RECEIVER_QUEUE              Queue;
 
     VifInterface = AdapterGetVifInterface(Receiver->Adapter);
@@ -492,9 +515,9 @@ ReceiverQueuePacket(
         return;
     }
 
-    Index = KeGetCurrentProcessorNumberEx(NULL);
-
     Queue = &Receiver->Queue[Index];
+
+    KeAcquireSpinLockAtDpcLevel(&Queue->Lock);
 
     if (Queue->Head == NULL) {
         ASSERT3U(Queue->Count, ==, 0);
@@ -504,6 +527,8 @@ ReceiverQueuePacket(
         Queue->Tail = NetBufferList;
     }
     Queue->Count++;
+
+    KeReleaseSpinLockFromDpcLevel(&Queue->Lock);
 
     if (!More)
         __ReceiverPushPackets(Receiver, Index);
