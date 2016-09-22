@@ -512,7 +512,7 @@ ReceiverQueuePacket(
         XENVIF_VIF(ReceiverReturnPacket,
                    VifInterface,
                    Cookie);
-        return;
+        goto done;
     }
 
     Queue = &Receiver->Queue[Index];
@@ -530,6 +530,7 @@ ReceiverQueuePacket(
 
     KeReleaseSpinLockFromDpcLevel(&Queue->Lock);
 
+done:
     if (!More)
         __ReceiverPushPackets(Receiver, Index);
 }
