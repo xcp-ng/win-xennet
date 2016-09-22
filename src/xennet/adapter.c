@@ -1932,6 +1932,8 @@ AdapterEnable(
     if (!NT_SUCCESS(status))
         goto fail4;
 
+    ReceiverEnable(Adapter->Receiver);
+
     AdapterMediaStateChange(Adapter);
 
     Adapter->Enabled = TRUE;
@@ -1958,6 +1960,8 @@ AdapterDisable(
 {
     ASSERT(Adapter->Enabled);
     Adapter->Enabled = FALSE;
+
+    ReceiverDisable(Adapter->Receiver);
 
     XENVIF_VIF(Disable,
                &Adapter->VifInterface);

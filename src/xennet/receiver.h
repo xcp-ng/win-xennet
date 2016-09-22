@@ -76,4 +76,14 @@ ReceiverOffloadOptions(
     IN  PXENNET_RECEIVER    Receiver
     );
 
+extern VOID
+ReceiverEnable(
+    IN  PXENNET_RECEIVER    Receiver
+    );
+
+extern VOID
+ReceiverDisable(
+    IN  PXENNET_RECEIVER    Receiver
+    );
+
 #endif // _XENNET_RECEIVER_H_

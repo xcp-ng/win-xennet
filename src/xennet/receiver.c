@@ -378,11 +378,15 @@ __ReceiverPushPackets(
     KeReleaseSpinLockFromDpcLevel(&Queue->Lock);
 
     Indicated = InterlockedAdd(&Receiver->Indicated, Count);
+
+    KeMemoryBarrier();
+
     Returned = Receiver->Returned;
 
     Flags = NDIS_RECEIVE_FLAGS_DISPATCH_LEVEL |
             NDIS_RECEIVE_FLAGS_PERFECT_FILTERED;
 
+    ASSERT3S(Indicated - Returned, >=, 0);
     if (Indicated - Returned > IN_NDIS_MAX)
         Flags |= NDIS_RECEIVE_FLAGS_RESOURCES;
 
@@ -570,4 +574,24 @@ ReceiverOffloadOptions(
     )
 {
     return &Receiver->OffloadOptions;
+}
+
+VOID
+ReceiverEnable(
+    IN  PXENNET_RECEIVER    Receiver
+    )
+{
+    UNREFERENCED_PARAMETER(Receiver);
+
+    Info("<====>\n");
+}
+
+VOID
+ReceiverDisable(
+    IN  PXENNET_RECEIVER    Receiver
+    )
+{
+    Info("<====> (Indicated = %u Returned = %u)\n",
+         Receiver->Indicated,
+         Receiver->Returned);
 }
