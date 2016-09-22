@@ -323,6 +323,35 @@ fail1:
     return NULL;
 }
 
+static FORCEINLINE VOID __IndicateReceiveNetBufferLists(
+    IN  NDIS_HANDLE         MiniportAdapterHandle,
+    IN  PNET_BUFFER_LIST    NetBufferLists,
+    IN  NDIS_PORT_NUMBER    PortNumber,
+    IN  ULONG               NumberOfNetBufferLists,
+    IN  ULONG               ReceiveFlags
+    )
+{
+    ULONG                   Count;
+
+    Count = 0;
+    while (NetBufferLists != NULL) {
+        PNET_BUFFER_LIST        Next;
+
+        Next = NET_BUFFER_LIST_NEXT_NBL(NetBufferLists);
+        NET_BUFFER_LIST_NEXT_NBL(NetBufferLists) = NULL;
+
+        NdisMIndicateReceiveNetBufferLists(MiniportAdapterHandle,
+                                           NetBufferLists,
+                                           PortNumber,
+                                           1,
+                                           ReceiveFlags);
+
+        Count++;
+        NetBufferLists = Next;
+    }
+    ASSERT3U(Count, ==, NumberOfNetBufferLists);
+}
+
 static VOID
 __ReceiverPushPackets(
     IN  PXENNET_RECEIVER    Receiver,
@@ -357,11 +386,11 @@ __ReceiverPushPackets(
     if (Indicated - Returned > IN_NDIS_MAX)
         Flags |= NDIS_RECEIVE_FLAGS_RESOURCES;
 
-    NdisMIndicateReceiveNetBufferLists(AdapterGetHandle(Receiver->Adapter),
-                                       NetBufferList,
-                                       NDIS_DEFAULT_PORT_NUMBER,
-                                       Count,
-                                       Flags);
+    __IndicateReceiveNetBufferLists(AdapterGetHandle(Receiver->Adapter),
+                                    NetBufferList,
+                                    NDIS_DEFAULT_PORT_NUMBER,
+                                    Count,
+                                    Flags);
 
     if (Flags & NDIS_RECEIVE_FLAGS_RESOURCES)
         (VOID) __ReceiverReturnNetBufferLists(Receiver, NetBufferList, FALSE);
