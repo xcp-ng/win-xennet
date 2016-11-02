@@ -75,6 +75,8 @@ typedef struct _XENNET_RSS {
 } XENNET_RSS, *PXENNET_RSS;
 
 struct _XENNET_ADAPTER {
+    PWCHAR                      Location;
+
     XENVIF_VIF_INTERFACE        VifInterface;
     XENBUS_STORE_INTERFACE      StoreInterface;
     XENBUS_SUSPEND_INTERFACE    SuspendInterface;
@@ -1507,6 +1509,14 @@ AdapterGetReceiver(
     return Adapter->Receiver;
 }
 
+PWCHAR
+AdapterGetLocation(
+    IN  PXENNET_ADAPTER     Adapter
+    )
+{
+    return Adapter->Location;
+}
+
 static FORCEINLINE PVOID
 __AdapterAllocate(
     IN  ULONG   Length
@@ -1976,20 +1986,27 @@ AdapterDisable(
 
 static VOID
 DisplayLinkState(
+    IN  PXENNET_ADAPTER     Adapter,
     IN  PNDIS_LINK_STATE    LinkState
     )
 {
     if (LinkState->MediaConnectState == MediaConnectStateUnknown) {
-        Info("LINK: STATE UNKNOWN\n");
+        Info("%ws: LINK: STATE UNKNOWN\n", Adapter->Location);
     } else if (LinkState->MediaConnectState == MediaConnectStateDisconnected) {
-        Info("LINK: DOWN\n");
+        Info("%ws: LINK: DOWN\n", Adapter->Location);
     } else {
         if (LinkState->MediaDuplexState == MediaDuplexStateHalf)
-            Info("LINK: UP: SPEED=%u DUPLEX=HALF\n", LinkState->RcvLinkSpeed);
+            Info("%ws: LINK: UP: SPEED=%u DUPLEX=HALF\n",
+                 Adapter->Location,
+                 LinkState->RcvLinkSpeed);
         else if (LinkState->MediaDuplexState == MediaDuplexStateFull)
-            Info("LINK: UP: SPEED=%u DUPLEX=FULL\n", LinkState->RcvLinkSpeed);
+            Info("%ws: LINK: UP: SPEED=%u DUPLEX=FULL\n",
+                 Adapter->Location,
+                 LinkState->RcvLinkSpeed);
         else
-            Info("LINK: UP: SPEED=%u DUPLEX=UNKNOWN\n", LinkState->RcvLinkSpeed);
+            Info("%ws: LINK: UP: SPEED=%u DUPLEX=UNKNOWN\n",
+                 Adapter->Location,
+                 LinkState->RcvLinkSpeed);
     }
 }
 
@@ -2017,7 +2034,7 @@ AdapterMediaStateChange(
     if (!RtlEqualMemory(&Adapter->LinkState,
                        &LinkState,
                        sizeof (LinkState)))
-        DisplayLinkState(&LinkState);
+        DisplayLinkState(Adapter, &LinkState);
 
     Adapter->LinkState = LinkState;
 
@@ -2062,19 +2079,23 @@ AdapterSetInformation(
             PowerState = (PNDIS_DEVICE_POWER_STATE)Buffer;
             switch (*PowerState) {
             case NdisDeviceStateD0:
-                Info("SET_POWER: D0\n");
+                Info("%ws: SET_POWER: D0\n",
+                     Adapter->Location);
                 break;
 
             case NdisDeviceStateD1:
-                Info("SET_POWER: D1\n");
+                Info("%ws: SET_POWER: D1\n",
+                     Adapter->Location);
                 break;
 
             case NdisDeviceStateD2:
-                Info("SET_POWER: D2\n");
+                Info("%ws: SET_POWER: D2\n",
+                     Adapter->Location);
                 break;
 
             case NdisDeviceStateD3:
-                Info("SET_POWER: D3\n");
+                Info("%ws: SET_POWER: D3\n",
+                     Adapter->Location);
                 break;
             }
         }
@@ -2274,19 +2295,23 @@ AdapterQueryInformation(
             PowerState = (PNDIS_DEVICE_POWER_STATE)Buffer;
             switch (*PowerState) {
             case NdisDeviceStateD0:
-                Info("QUERY_POWER: D0\n");
+                Info("%ws: QUERY_POWER: D0\n",
+                     Adapter->Location);
                 break;
 
             case NdisDeviceStateD1:
-                Info("QUERY_POWER: D1\n");
+                Info("%ws: QUERY_POWER: D1\n",
+                     Adapter->Location);
                 break;
 
             case NdisDeviceStateD2:
-                Info("QUERY_POWER: D2\n");
+                Info("%ws: QUERY_POWER: D2\n",
+                     Adapter->Location);
                 break;
 
             case NdisDeviceStateD3:
-                Info("QUERY_POWER: D3\n");
+                Info("%ws: QUERY_POWER: D3\n",
+                     Adapter->Location);
                 break;
             }
         }
@@ -2813,6 +2838,56 @@ fail1:
     return status;
 }
 
+static NTSTATUS
+__QueryLocationInformation(
+    IN  PDEVICE_OBJECT  DeviceObject,
+    OUT PWCHAR          *Location
+    )
+{
+    ULONG               Size;
+    NTSTATUS            status;
+
+    status = IoGetDeviceProperty(DeviceObject,
+                                 DevicePropertyLocationInformation,
+                                 0,
+                                 NULL,
+                                 &Size);
+    if (!NT_SUCCESS(status) &&
+        status != STATUS_BUFFER_TOO_SMALL)
+        goto fail1;
+
+    Size += sizeof (WCHAR);
+
+    *Location = __AdapterAllocate(Size);
+
+    status = STATUS_NO_MEMORY;
+    if (*Location == NULL)
+        goto fail2;
+
+    status = IoGetDeviceProperty(DeviceObject,
+                                 DevicePropertyLocationInformation,
+                                 Size,
+                                 *Location,
+                                 &Size);
+    if (!NT_SUCCESS(status))
+        goto fail3;
+
+    return STATUS_SUCCESS;
+
+fail3:
+    Error("fail3\n");
+
+    __AdapterFree(*Location);
+
+fail2:
+    Error("fail2\n");
+
+fail1:
+    Error("fail1 (%08x)\n");
+
+    return status;
+}
+
 #pragma prefast(push)
 #pragma prefast(disable:6102)
 
@@ -2972,7 +3047,8 @@ AdapterSetGeneralAttributes(
     Attribs.RecvScaleCapabilities = NULL;
 
     if (!Adapter->Properties.rss) {
-        Info("RSS DISABLED\n");
+        Info("%ws: RSS DISABLED\n",
+             Adapter->Location);
         goto done;
     }
 
@@ -3009,7 +3085,9 @@ AdapterSetGeneralAttributes(
                &Rss.NumberOfReceiveQueues);
     Rss.NumberOfInterruptMessages = Rss.NumberOfReceiveQueues;
 
-    Info("RSS ENABLED (%u QUEUES)\n", Rss.NumberOfReceiveQueues);
+    Info("%ws: RSS ENABLED (%u QUEUES)\n",
+         Adapter->Location,
+         Rss.NumberOfReceiveQueues);
 
     Adapter->Rss.Supported = TRUE;
     Attribs.RecvScaleCapabilities = &Rss;
@@ -3221,6 +3299,13 @@ AdapterInitialize(
                            NULL,
                            NULL);
 
+    status = __QueryLocationInformation(DeviceObject,
+                                        &(*Adapter)->Location);
+
+    ndisStatus = NDIS_STATUS_FAILURE;
+    if (!NT_SUCCESS(status))
+        goto fail2;
+
     status = __QueryInterface(DeviceObject,
                               &GUID_XENVIF_VIF_INTERFACE,
                               XENVIF_VIF_INTERFACE_VERSION_MAX,
@@ -3228,9 +3313,8 @@ AdapterInitialize(
                               sizeof(XENVIF_VIF_INTERFACE),
                               FALSE);
 
-    ndisStatus = NDIS_STATUS_FAILURE;
     if (!NT_SUCCESS(status))
-        goto fail2;
+        goto fail3;
 
     status = __QueryInterface(DeviceObject,
                               &GUID_XENBUS_STORE_INTERFACE,
@@ -3239,7 +3323,7 @@ AdapterInitialize(
                               sizeof(XENBUS_STORE_INTERFACE),
                               FALSE);
     if (!NT_SUCCESS(status))
-        goto fail3;
+        goto fail4;
 
     status = __QueryInterface(DeviceObject,
                               &GUID_XENBUS_SUSPEND_INTERFACE,
@@ -3248,38 +3332,38 @@ AdapterInitialize(
                               sizeof(XENBUS_SUSPEND_INTERFACE),
                               FALSE);
     if (!NT_SUCCESS(status))
-        goto fail4;
+        goto fail5;
 
     status = XENVIF_VIF(Acquire,
                         &(*Adapter)->VifInterface);
     if (!NT_SUCCESS(status))
-        goto fail5;
+        goto fail6;
 
     (*Adapter)->NdisAdapterHandle = Handle;
 
     ndisStatus = TransmitterInitialize(*Adapter, &(*Adapter)->Transmitter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail6;
+        goto fail7;
 
     ndisStatus = ReceiverInitialize(*Adapter, &(*Adapter)->Receiver);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail7;
+        goto fail8;
 
     ndisStatus = AdapterGetAdvancedSettings(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail8;
+        goto fail9;
 
     ndisStatus = AdapterSetRegistrationAttributes(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail9;
+        goto fail10;
 
     ndisStatus = AdapterSetGeneralAttributes(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail10;
+        goto fail11;
 
     ndisStatus = AdapterSetOffloadAttributes(*Adapter);
     if (ndisStatus != NDIS_STATUS_SUCCESS)
-        goto fail11;
+        goto fail12;
 
     RtlZeroMemory(&Dma, sizeof(Dma));
     Dma.Header.Type = NDIS_OBJECT_TYPE_SG_DMA_DESCRIPTION;
@@ -3298,30 +3382,33 @@ AdapterInitialize(
 
     return NDIS_STATUS_SUCCESS;
 
+fail12:
 fail11:
 fail10:
 fail9:
-fail8:
     ReceiverTeardown((*Adapter)->Receiver);
     (*Adapter)->Receiver = NULL;
 
-fail7:
+fail8:
     TransmitterTeardown((*Adapter)->Transmitter);
     (*Adapter)->Transmitter = NULL;
 
-fail6:
+fail7:
     (*Adapter)->NdisAdapterHandle = NULL;
 
     XENVIF_VIF(Release, &(*Adapter)->VifInterface);
 
-fail5:
+fail6:
     RtlZeroMemory(&(*Adapter)->SuspendInterface, sizeof(XENBUS_SUSPEND_INTERFACE));
 
-fail4:
+fail5:
     RtlZeroMemory(&(*Adapter)->StoreInterface, sizeof(XENBUS_STORE_INTERFACE));
 
-fail3:
+fail4:
     RtlZeroMemory(&(*Adapter)->VifInterface, sizeof(XENVIF_VIF_INTERFACE));
+
+fail3:
+    __AdapterFree((*Adapter)->Location);
 
 fail2:
     __AdapterFree(*Adapter);
@@ -3350,6 +3437,8 @@ AdapterTeardown(
     RtlZeroMemory(&Adapter->SuspendInterface, sizeof(XENBUS_SUSPEND_INTERFACE));
     RtlZeroMemory(&Adapter->StoreInterface, sizeof(XENBUS_STORE_INTERFACE));
     RtlZeroMemory(&Adapter->VifInterface, sizeof(XENVIF_VIF_INTERFACE));
+
+    __AdapterFree(Adapter->Location);
 
     __AdapterFree(Adapter);
 }

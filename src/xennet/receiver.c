@@ -581,9 +581,10 @@ ReceiverEnable(
     IN  PXENNET_RECEIVER    Receiver
     )
 {
-    UNREFERENCED_PARAMETER(Receiver);
+    PXENNET_ADAPTER         Adapter = Receiver->Adapter;
 
-    Info("<====>\n");
+    Info("%ws: <====>\n",
+         AdapterGetLocation(Adapter));
 }
 
 VOID
@@ -591,7 +592,10 @@ ReceiverDisable(
     IN  PXENNET_RECEIVER    Receiver
     )
 {
-    Info("<====> (Indicated = %u Returned = %u)\n",
+    PXENNET_ADAPTER         Adapter = Receiver->Adapter;
+
+    Info("%ws: <====> (Indicated = %u Returned = %u)\n",
+         AdapterGetLocation(Adapter),
          Receiver->Indicated,
          Receiver->Returned);
 }

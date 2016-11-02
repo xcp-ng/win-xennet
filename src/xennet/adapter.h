@@ -88,6 +88,11 @@ AdapterGetReceiver(
     IN  PXENNET_ADAPTER     Adapter
     );
 
+extern PWCHAR
+AdapterGetLocation(
+    IN  PXENNET_ADAPTER     Adapter
+    );
+
 extern NDIS_STATUS
 AdapterEnable(
     IN  PXENNET_ADAPTER     Adapter
