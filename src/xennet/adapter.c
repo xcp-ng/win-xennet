@@ -2838,6 +2838,9 @@ fail1:
     return status;
 }
 
+#pragma prefast(push)
+#pragma prefast(disable:6102)
+
 static NTSTATUS
 __QueryLocationInformation(
     IN  PDEVICE_OBJECT  DeviceObject,
@@ -2887,9 +2890,6 @@ fail1:
 
     return status;
 }
-
-#pragma prefast(push)
-#pragma prefast(disable:6102)
 
 #define READ_PROPERTY(field, name, defaultval, handle)  \
     do {                                                \
