@@ -226,7 +226,10 @@ __TransmitterOffloadOptions(
                                         Ieee8021QInfo->TagHeader.VlanId);
     }
 
-    if (LargeSendInfo->LsoV2Transmit.MSS != 0) {
+
+    if (LargeSendInfo->LsoV2Transmit.Type == NDIS_TCP_LARGE_SEND_OFFLOAD_V2_TYPE) {
+        ASSERT(LargeSendInfo->LsoV2Transmit.TcpHeaderOffset != 0);
+
         if (LargeSendInfo->LsoV2Transmit.IPVersion == NDIS_TCP_LARGE_SEND_OFFLOAD_IPv4)
             OffloadOptions->OffloadIpVersion4LargePacket = 1;
 
@@ -236,6 +239,111 @@ __TransmitterOffloadOptions(
         ASSERT3U(LargeSendInfo->LsoV2Transmit.MSS >> 16, ==, 0);
         *MaximumSegmentSize = (USHORT)LargeSendInfo->LsoV2Transmit.MSS;
     }
+}
+
+static VOID
+__TransmitterHash(
+    IN  PNET_BUFFER_LIST        NetBufferList,
+    OUT PXENVIF_PACKET_HASH     Hash
+    )
+{
+    switch (NET_BUFFER_LIST_GET_HASH_FUNCTION(NetBufferList)) {
+    case NdisHashFunctionToeplitz:
+        Hash->Algorithm = XENVIF_PACKET_HASH_ALGORITHM_TOEPLITZ;
+        break;
+
+    default:
+        Hash->Algorithm = XENVIF_PACKET_HASH_ALGORITHM_NONE;
+        break;
+    }
+
+    switch (NET_BUFFER_LIST_GET_HASH_TYPE(NetBufferList)) {
+    case NDIS_HASH_IPV4:
+        Hash->Type = XENVIF_PACKET_HASH_TYPE_IPV4;
+        break;
+
+    case NDIS_HASH_TCP_IPV4:
+        Hash->Type = XENVIF_PACKET_HASH_TYPE_IPV4_TCP;
+        break;
+
+    case NDIS_HASH_IPV6:
+        Hash->Type = XENVIF_PACKET_HASH_TYPE_IPV6;
+        break;
+
+    case NDIS_HASH_TCP_IPV6:
+        Hash->Type = XENVIF_PACKET_HASH_TYPE_IPV6_TCP;
+        break;
+
+    default:
+        break;
+    }
+
+    Hash->Value = NET_BUFFER_LIST_GET_HASH_VALUE(NetBufferList);
+}
+
+static VOID
+__TransmitterSendNetBufferList(
+    IN  PXENNET_TRANSMITTER     Transmitter,
+    IN  PNET_BUFFER_LIST        NetBufferList
+    )
+{
+    PNET_BUFFER_LIST_RESERVED   ListReserved;
+    PNET_BUFFER                 NetBuffer;
+    XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
+    USHORT                      TagControlInformation;
+    USHORT                      MaximumSegmentSize;
+    XENVIF_PACKET_HASH          Hash;
+
+    ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
+    RtlZeroMemory(ListReserved, sizeof (NET_BUFFER_LIST_RESERVED));
+
+    __TransmitterOffloadOptions(NetBufferList,
+                                &OffloadOptions,
+                                &TagControlInformation,
+                                &MaximumSegmentSize);
+
+    if (OffloadOptions.Value & ~Transmitter->OffloadOptions.Value) {
+        NET_BUFFER_LIST_STATUS(NetBufferList) = NDIS_STATUS_FAILURE;
+
+        NdisMSendNetBufferListsComplete(AdapterGetHandle(Transmitter->Adapter),
+                                        NetBufferList,
+                                        NDIS_SEND_COMPLETE_FLAGS_DISPATCH_LEVEL);
+        return;
+    }
+
+    __TransmitterHash(NetBufferList, &Hash);
+
+    __TransmitterGetNetBufferList(Transmitter, NetBufferList);
+
+    NetBuffer = NET_BUFFER_LIST_FIRST_NB(NetBufferList);
+    while (NetBuffer != NULL) {
+        PNET_BUFFER         NetBufferListNext = NET_BUFFER_NEXT_NB(NetBuffer);
+        PVOID               Cookie = NetBufferList;
+        NTSTATUS            status;
+
+        __TransmitterGetNetBufferList(Transmitter, NetBufferList);
+
+        status = XENVIF_VIF(TransmitterQueuePacket,
+                            AdapterGetVifInterface(Transmitter->Adapter),
+                            NET_BUFFER_CURRENT_MDL(NetBuffer),
+                            NET_BUFFER_CURRENT_MDL_OFFSET(NetBuffer),
+                            NET_BUFFER_DATA_LENGTH(NetBuffer),
+                            OffloadOptions,
+                            MaximumSegmentSize,
+                            TagControlInformation,
+                            &Hash,
+                            (NetBufferListNext != NULL) ? TRUE : FALSE,
+                            Cookie);
+        if (!NT_SUCCESS(status)) {
+            __TransmitterReturnPacket(Transmitter, Cookie,
+                                      NDIS_STATUS_NOT_ACCEPTED);
+            break;
+        }
+
+        NetBuffer = NetBufferListNext;
+    }
+
+    __TransmitterPutNetBufferList(Transmitter, NetBufferList);
 }
 
 VOID
@@ -262,90 +370,11 @@ TransmitterSendNetBufferLists(
 
     while (NetBufferList != NULL) {
         PNET_BUFFER_LIST            ListNext;
-        PNET_BUFFER_LIST_RESERVED   ListReserved;
-        PNET_BUFFER                 NetBuffer;
-        XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
-        USHORT                      TagControlInformation;
-        USHORT                      MaximumSegmentSize;
-        XENVIF_PACKET_HASH          Hash;
 
         ListNext = NET_BUFFER_LIST_NEXT_NBL(NetBufferList);
         NET_BUFFER_LIST_NEXT_NBL(NetBufferList) = NULL;
 
-        __TransmitterOffloadOptions(NetBufferList,
-                                    &OffloadOptions,
-                                    &TagControlInformation,
-                                    &MaximumSegmentSize);
-
-        OffloadOptions.Value &= Transmitter->OffloadOptions.Value;
-
-        switch (NET_BUFFER_LIST_GET_HASH_FUNCTION(NetBufferList)) {
-        case NdisHashFunctionToeplitz:
-            Hash.Algorithm = XENVIF_PACKET_HASH_ALGORITHM_TOEPLITZ;
-            break;
-
-        default:
-            Hash.Algorithm = XENVIF_PACKET_HASH_ALGORITHM_NONE;
-            break;
-        }
-
-        switch (NET_BUFFER_LIST_GET_HASH_TYPE(NetBufferList)) {
-        case NDIS_HASH_IPV4:
-            Hash.Type = XENVIF_PACKET_HASH_TYPE_IPV4;
-            break;
-
-        case NDIS_HASH_TCP_IPV4:
-            Hash.Type = XENVIF_PACKET_HASH_TYPE_IPV4_TCP;
-            break;
-
-        case NDIS_HASH_IPV6:
-            Hash.Type = XENVIF_PACKET_HASH_TYPE_IPV6;
-            break;
-
-        case NDIS_HASH_TCP_IPV6:
-            Hash.Type = XENVIF_PACKET_HASH_TYPE_IPV6_TCP;
-            break;
-
-        default:
-                break;
-        }
-
-        Hash.Value = NET_BUFFER_LIST_GET_HASH_VALUE(NetBufferList);
-
-        ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
-        RtlZeroMemory(ListReserved, sizeof (NET_BUFFER_LIST_RESERVED));
-
-        __TransmitterGetNetBufferList(Transmitter, NetBufferList);
-
-        NetBuffer = NET_BUFFER_LIST_FIRST_NB(NetBufferList);
-        while (NetBuffer != NULL) {
-            PNET_BUFFER         NetBufferListNext = NET_BUFFER_NEXT_NB(NetBuffer);
-            PVOID               Cookie = NetBufferList;
-            NTSTATUS            status;
-
-            __TransmitterGetNetBufferList(Transmitter, NetBufferList);
-
-            status = XENVIF_VIF(TransmitterQueuePacket,
-                                AdapterGetVifInterface(Transmitter->Adapter),
-                                NET_BUFFER_CURRENT_MDL(NetBuffer),
-                                NET_BUFFER_CURRENT_MDL_OFFSET(NetBuffer),
-                                NET_BUFFER_DATA_LENGTH(NetBuffer),
-                                OffloadOptions,
-                                MaximumSegmentSize,
-                                TagControlInformation,
-                                &Hash,
-                                (NetBufferListNext != NULL) ? TRUE : FALSE,
-                                Cookie);
-            if (!NT_SUCCESS(status)) {
-                __TransmitterReturnPacket(Transmitter, Cookie,
-                                          NDIS_STATUS_NOT_ACCEPTED);
-                break;
-            }
-
-            NetBuffer = NetBufferListNext;
-        }
-
-        __TransmitterPutNetBufferList(Transmitter, NetBufferList);
+        __TransmitterSendNetBufferList(Transmitter, NetBufferList);
 
         NetBufferList = ListNext;
     }
