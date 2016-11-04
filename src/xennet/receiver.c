@@ -377,11 +377,13 @@ __ReceiverPushPackets(
 
     KeReleaseSpinLockFromDpcLevel(&Queue->Lock);
 
-    Indicated = InterlockedAdd(&Receiver->Indicated, Count);
+    (VOID) InterlockedAdd(&Receiver->Indicated, Count);
+
+    Returned = Receiver->Returned;
 
     KeMemoryBarrier();
 
-    Returned = Receiver->Returned;
+    Indicated = Receiver->Indicated;
 
     Flags = NDIS_RECEIVE_FLAGS_DISPATCH_LEVEL |
             NDIS_RECEIVE_FLAGS_PERFECT_FILTERED;
