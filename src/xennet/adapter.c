@@ -2766,6 +2766,7 @@ AdapterQueryInformation(
     return ndisStatus;
 }
 
+__drv_requiresIRQL(PASSIVE_LEVEL)
 static NTSTATUS
 __QueryInterface(
     IN  PDEVICE_OBJECT  DeviceObject,

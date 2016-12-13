@@ -355,7 +355,7 @@ TransmitterSendNetBufferLists(
     )
 {
     LIST_ENTRY                  List;
-    KIRQL                       Irql;
+    KIRQL                       Irql = PASSIVE_LEVEL;
 
     UNREFERENCED_PARAMETER(PortNumber);
 
@@ -363,9 +363,7 @@ TransmitterSendNetBufferLists(
 
     if (!NDIS_TEST_SEND_AT_DISPATCH_LEVEL(SendFlags)) {
         ASSERT3U(NDIS_CURRENT_IRQL(), <=, DISPATCH_LEVEL);
-        NDIS_RAISE_IRQL_TO_DISPATCH(&Irql);
-    } else {
-        Irql = DISPATCH_LEVEL;
+        KeRaiseIrql(DISPATCH_LEVEL, &Irql);
     }
 
     while (NetBufferList != NULL) {
@@ -379,7 +377,8 @@ TransmitterSendNetBufferLists(
         NetBufferList = ListNext;
     }
 
-    NDIS_LOWER_IRQL(Irql, DISPATCH_LEVEL);
+    if (!NDIS_TEST_SEND_AT_DISPATCH_LEVEL(SendFlags))
+        KeLowerIrql(Irql);
 }
 
 VOID
