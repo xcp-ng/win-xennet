@@ -285,7 +285,7 @@ __ReceiverReceivePacket(
         break;
 
     default:
-        break;
+        goto done;
     }
 
     switch (Hash->Type) {
@@ -308,12 +308,16 @@ __ReceiverReceivePacket(
         NET_BUFFER_LIST_SET_HASH_TYPE(NetBufferList,
                                       NDIS_HASH_TCP_IPV6);
         break;
+
+    default:
+        ASSERT(FALSE);
+        break;
     }
 
     NET_BUFFER_LIST_SET_HASH_VALUE(NetBufferList,
                                    Hash->Value);
 
-
+done:
     return NetBufferList;
 
 fail2:
