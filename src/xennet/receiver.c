@@ -328,14 +328,19 @@ fail1:
 }
 
 static FORCEINLINE VOID __IndicateReceiveNetBufferLists(
-    IN  NDIS_HANDLE         MiniportAdapterHandle,
+    IN  PXENNET_RECEIVER    Receiver,
     IN  PNET_BUFFER_LIST    NetBufferLists,
     IN  NDIS_PORT_NUMBER    PortNumber,
     IN  ULONG               NumberOfNetBufferLists,
     IN  ULONG               ReceiveFlags
     )
 {
+    PXENNET_ADAPTER         Adapter = Receiver->Adapter;
+    NDIS_HANDLE             MiniportAdapterHandle = AdapterGetHandle(Adapter);
+    PXENVIF_VIF_INTERFACE   VifInterface;
     ULONG                   Count;
+
+    VifInterface = AdapterGetVifInterface(Receiver->Adapter);
 
     Count = 0;
     while (NetBufferLists != NULL) {
@@ -349,6 +354,20 @@ static FORCEINLINE VOID __IndicateReceiveNetBufferLists(
                                            PortNumber,
                                            1,
                                            ReceiveFlags);
+
+        if (ReceiveFlags & NDIS_RECEIVE_FLAGS_RESOURCES) {
+            PVOID   Cookie;
+
+            Cookie = __ReceiverReleaseNetBufferList(Receiver,
+                                                    NetBufferLists,
+                                                    FALSE);
+
+            XENVIF_VIF(ReceiverReturnPacket,
+                       VifInterface,
+                       Cookie);
+
+            (VOID) InterlockedIncrement(&Receiver->Returned);
+        }
 
         Count++;
         NetBufferLists = Next;
@@ -396,14 +415,11 @@ __ReceiverPushPackets(
     if (Indicated - Returned > IN_NDIS_MAX)
         Flags |= NDIS_RECEIVE_FLAGS_RESOURCES;
 
-    __IndicateReceiveNetBufferLists(AdapterGetHandle(Receiver->Adapter),
+    __IndicateReceiveNetBufferLists(Receiver,
                                     NetBufferList,
                                     NDIS_DEFAULT_PORT_NUMBER,
                                     Count,
                                     Flags);
-
-    if (Flags & NDIS_RECEIVE_FLAGS_RESOURCES)
-        (VOID) __ReceiverReturnNetBufferLists(Receiver, NetBufferList, FALSE);
 }
 
 NDIS_STATUS
