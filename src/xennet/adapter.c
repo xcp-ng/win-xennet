@@ -1996,15 +1996,15 @@ DisplayLinkState(
         Info("%ws: LINK: DOWN\n", Adapter->Location);
     } else {
         if (LinkState->MediaDuplexState == MediaDuplexStateHalf)
-            Info("%ws: LINK: UP: SPEED=%u DUPLEX=HALF\n",
+            Info("%ws: LINK: UP: SPEED=%I64u DUPLEX=HALF\n",
                  Adapter->Location,
                  LinkState->RcvLinkSpeed);
         else if (LinkState->MediaDuplexState == MediaDuplexStateFull)
-            Info("%ws: LINK: UP: SPEED=%u DUPLEX=FULL\n",
+            Info("%ws: LINK: UP: SPEED=%I64u DUPLEX=FULL\n",
                  Adapter->Location,
                  LinkState->RcvLinkSpeed);
         else
-            Info("%ws: LINK: UP: SPEED=%u DUPLEX=UNKNOWN\n",
+            Info("%ws: LINK: UP: SPEED=%I64u DUPLEX=UNKNOWN\n",
                  Adapter->Location,
                  LinkState->RcvLinkSpeed);
     }
@@ -2041,12 +2041,12 @@ AdapterMediaStateChange(
     RtlZeroMemory(&StatusIndication, sizeof(StatusIndication));
     StatusIndication.Header.Type = NDIS_OBJECT_TYPE_STATUS_INDICATION;
     StatusIndication.Header.Revision = NDIS_STATUS_INDICATION_REVISION_1;
-    StatusIndication.Header.Size = NDIS_SIZEOF_LINK_STATE_REVISION_1;
+    StatusIndication.Header.Size = NDIS_SIZEOF_STATUS_INDICATION_REVISION_1;
 
     StatusIndication.SourceHandle = Adapter->NdisAdapterHandle;
     StatusIndication.StatusCode = NDIS_STATUS_LINK_STATE;
     StatusIndication.StatusBuffer = &LinkState;
-    StatusIndication.StatusBufferSize = NDIS_SIZEOF_LINK_STATE_REVISION_1;
+    StatusIndication.StatusBufferSize = sizeof (NDIS_LINK_STATE);
 
     NdisMIndicateStatusEx(Adapter->NdisAdapterHandle, &StatusIndication);
 }
