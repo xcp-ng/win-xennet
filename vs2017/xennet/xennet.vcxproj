@@ -26,7 +26,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <AdditionalIncludeDirectories>$(WindowsSdkDir)\include\km;..\..\include;..\..\include\xen;</AdditionalIncludeDirectories>
       <WarningLevel>EnableAllWarnings</WarningLevel>
-      <DisableSpecificWarnings>4464;4711;4770;4548;4820;4668;4255;6001;6054;28160;28196;30030;30029;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <DisableSpecificWarnings>4464;4711;4770;4548;4820;4668;4255;5045;6001;6054;28160;28196;30030;30029;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <EnablePREfast>true</EnablePREfast>
     </ClCompile>
