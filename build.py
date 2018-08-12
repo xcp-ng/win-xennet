@@ -408,7 +408,7 @@ if __name__ == '__main__':
     if 'PRODUCT_NAME' not in os.environ.keys():
         os.environ['PRODUCT_NAME'] = 'XCP-ng'
 
-    if 'VENDOR_DEVICE_ID' in os.environ.keys():
+    if 'VENDOR_DEVICE_ID' not in os.environ.keys():
         os.environ['VENDOR_DEVICE_ID'] = 'C000'
 
     os.environ['MAJOR_VERSION'] = '8'
