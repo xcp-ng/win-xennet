@@ -115,7 +115,6 @@ static NDIS_OID XennetSupportedOids[] =
     OID_GEN_RECEIVE_BLOCK_SIZE,
     OID_GEN_TRANSMIT_BLOCK_SIZE,
     OID_GEN_MAC_OPTIONS,
-    OID_GEN_LINK_SPEED,
     OID_GEN_MEDIA_CONNECT_STATUS,
     OID_GEN_VENDOR_DESCRIPTION,
     OID_GEN_VENDOR_DRIVER_VERSION,
@@ -2476,19 +2475,6 @@ AdapterQueryInformation(
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
                                 0x5853,
-                                &BytesWritten);
-        break;
-
-    case OID_GEN_LINK_SPEED:
-        XENVIF_VIF(MacQueryState,
-                   &Adapter->VifInterface,
-                   NULL,
-                   &Value64,
-                   NULL);
-        BytesNeeded = sizeof(ULONG);
-        ndisStatus = __SetUlong(Buffer,
-                                BufferLength,
-                                (ULONG)(Value64 / 100),
                                 &BytesWritten);
         break;
 
