@@ -323,17 +323,21 @@ __TransmitterSendNetBufferList(
 
         __TransmitterGetNetBufferList(Transmitter, NetBufferList);
 
-        status = XENVIF_VIF(TransmitterQueuePacket,
-                            AdapterGetVifInterface(Transmitter->Adapter),
-                            NET_BUFFER_CURRENT_MDL(NetBuffer),
-                            NET_BUFFER_CURRENT_MDL_OFFSET(NetBuffer),
-                            NET_BUFFER_DATA_LENGTH(NetBuffer),
-                            OffloadOptions,
-                            MaximumSegmentSize,
-                            TagControlInformation,
-                            &Hash,
-                            (NetBufferListNext != NULL) ? TRUE : FALSE,
-                            Cookie);
+        if (NET_BUFFER_CURRENT_MDL(NetBuffer) != NULL) {
+            status = XENVIF_VIF(TransmitterQueuePacket,
+                                AdapterGetVifInterface(Transmitter->Adapter),
+                                NET_BUFFER_CURRENT_MDL(NetBuffer),
+                                NET_BUFFER_CURRENT_MDL_OFFSET(NetBuffer),
+                                NET_BUFFER_DATA_LENGTH(NetBuffer),
+                                OffloadOptions,
+                                MaximumSegmentSize,
+                                TagControlInformation,
+                                &Hash,
+                                (NetBufferListNext != NULL) ? TRUE : FALSE,
+                                Cookie);
+        }
+        else
+            status = STATUS_INVALID_PARAMETER;
         if (!NT_SUCCESS(status)) {
             __TransmitterReturnPacket(Transmitter, Cookie,
                                       NDIS_STATUS_NOT_ACCEPTED);
