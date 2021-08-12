@@ -324,6 +324,7 @@ __TransmitterSendNetBufferList(
         __TransmitterGetNetBufferList(Transmitter, NetBufferList);
 
         if (NET_BUFFER_CURRENT_MDL(NetBuffer) != NULL) {
+            ASSERT(NetBuffer != NULL);
             status = XENVIF_VIF(TransmitterQueuePacket,
                                 AdapterGetVifInterface(Transmitter->Adapter),
                                 NET_BUFFER_CURRENT_MDL(NetBuffer),
