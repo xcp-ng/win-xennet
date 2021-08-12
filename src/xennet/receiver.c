@@ -432,7 +432,7 @@ ReceiverInitialize(
     ULONG                           Index;
     NDIS_STATUS                     status;
 
-    *Receiver = ExAllocatePoolWithTag(NonPagedPool,
+    *Receiver = __AllocatePoolWithTag(NonPagedPool,
                                       sizeof(XENNET_RECEIVER),
                                       RECEIVER_POOL_TAG);
 
@@ -516,7 +516,7 @@ ReceiverTeardown(
 
     Receiver->Adapter = NULL;
 
-    ExFreePoolWithTag(Receiver, RECEIVER_POOL_TAG);
+    __FreePoolWithTag(Receiver, RECEIVER_POOL_TAG);
 }
 
 VOID

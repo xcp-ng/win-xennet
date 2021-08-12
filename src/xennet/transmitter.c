@@ -36,6 +36,7 @@
 #include <tcpip.h>
 #include "dbg_print.h"
 #include "assert.h"
+#include "util.h"
 
 struct _XENNET_TRANSMITTER {
     PXENNET_ADAPTER             Adapter;
@@ -53,7 +54,7 @@ TransmitterInitialize (
 {
     NTSTATUS                status;
 
-    *Transmitter = ExAllocatePoolWithTag(NonPagedPool,
+    *Transmitter = __AllocatePoolWithTag(NonPagedPool,
                                          sizeof(XENNET_TRANSMITTER),
                                          TRANSMITTER_POOL_TAG);
 
@@ -85,7 +86,7 @@ TransmitterTeardown(
 
     RtlZeroMemory(&Transmitter->Lock, sizeof(KSPIN_LOCK));
 
-    ExFreePoolWithTag(Transmitter, TRANSMITTER_POOL_TAG);
+    __FreePoolWithTag(Transmitter, TRANSMITTER_POOL_TAG);
 }
 
 typedef struct _NET_BUFFER_LIST_RESERVED {
