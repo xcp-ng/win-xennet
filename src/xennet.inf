@@ -70,7 +70,7 @@ Characteristics=0x84
 BusType=1
 *IfType=6             	; IF_TYPE_ETHERNET_CSMACD
 *MediaType=0          	; NdisMedium802_3
-*PhysicalMediaType=0	; NdisPhysicalMediumUnspecified
+*PhysicalMediaType=14	; NdisPhysicalMedium802_3
 CopyFiles=XenNet_Copyfiles
 AddReg=Xennet_Inst_AddReg
 

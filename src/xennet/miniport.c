@@ -338,12 +338,18 @@ MiniportRegister(
 
     NdisZeroMemory(&MiniportDriverCharacteristics, sizeof (MiniportDriverCharacteristics));
 
-    MiniportDriverCharacteristics.Header.Type = NDIS_OBJECT_TYPE_MINIPORT_DRIVER_CHARACTERISTICS,
+    MiniportDriverCharacteristics.Header.Type = NDIS_OBJECT_TYPE_MINIPORT_DRIVER_CHARACTERISTICS;
     MiniportDriverCharacteristics.Header.Size = NDIS_SIZEOF_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_2;
     MiniportDriverCharacteristics.Header.Revision = NDIS_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_2;
 
-    MiniportDriverCharacteristics.MajorNdisVersion = NDIS_MINIPORT_MAJOR_VERSION;
-    MiniportDriverCharacteristics.MinorNdisVersion = NDIS_MINIPORT_MINOR_VERSION;
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660) {
+        MiniportDriverCharacteristics.MajorNdisVersion = NDIS_MINIPORT_MAJOR_VERSION; // 6
+        MiniportDriverCharacteristics.MinorNdisVersion = NDIS_MINIPORT_MINOR_VERSION; // 60
+    } else {
+        MiniportDriverCharacteristics.MajorNdisVersion = NDIS_MINIPORT_MINIMUM_MAJOR_VERSION; // 6
+        MiniportDriverCharacteristics.MinorNdisVersion = NDIS_MINIPORT_MINIMUM_MINOR_VERSION; // 30
+    }
+
     MiniportDriverCharacteristics.MajorDriverVersion = MAJOR_VERSION;
     MiniportDriverCharacteristics.MinorDriverVersion = MINOR_VERSION;
     MiniportDriverCharacteristics.Flags = NDIS_WDM_DRIVER;

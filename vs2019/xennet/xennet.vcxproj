@@ -21,7 +21,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
-      <PreprocessorDefinitions>PROJECT=$(ProjectName);NDIS_MINIPORT_DRIVER;NDIS_WDM=1;NDIS630_MINIPORT=1;POOL_NX_OPTIN=1;NT_PROCESSOR_GROUPS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>PROJECT=$(ProjectName);NDIS_MINIPORT_DRIVER;NDIS_WDM=1;NDIS630_MINIPORT=1;NDIS660_MINIPORT=1;POOL_NX_OPTIN=1;NT_PROCESSOR_GROUPS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <AdditionalIncludeDirectories>$(WindowsSdkDir)\include\km;..\..\include;..\..\include\xen;</AdditionalIncludeDirectories>
       <WarningLevel>EnableAllWarnings</WarningLevel>

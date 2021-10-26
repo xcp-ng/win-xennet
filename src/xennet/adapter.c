@@ -359,8 +359,14 @@ AdapterIndicateOffloadChanged(
 
     RtlZeroMemory(&Current, sizeof(Current));
     Current.Header.Type = NDIS_OBJECT_TYPE_OFFLOAD;
-    Current.Header.Revision = NDIS_OFFLOAD_REVISION_2;
-    Current.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_2;
+
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660) {
+        Current.Header.Revision = NDIS_OFFLOAD_REVISION_4;
+        Current.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_4;
+    } else {
+        Current.Header.Revision = NDIS_OFFLOAD_REVISION_3;
+        Current.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_3;
+    }
 
     Current.Checksum.IPv4Receive.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
 
@@ -446,7 +452,11 @@ AdapterIndicateOffloadChanged(
     Status.Header.Size = NDIS_SIZEOF_STATUS_INDICATION_REVISION_1;
     Status.StatusCode = NDIS_STATUS_TASK_OFFLOAD_CURRENT_CONFIG;
     Status.StatusBuffer = &Current;
-    Status.StatusBufferSize = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_2;
+
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660)
+        Status.StatusBufferSize = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_4;
+    else
+        Status.StatusBufferSize = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_3;
 
     NdisMIndicateStatusEx(Adapter->NdisAdapterHandle, &Status);
 }
@@ -939,14 +949,21 @@ DisplayRss(
 static NDIS_STATUS
 AdapterGetReceiveScaleParameters(
     IN  PXENNET_ADAPTER                 Adapter,
-    IN  PNDIS_RECEIVE_SCALE_PARAMETERS  Parameters
+    IN  PNDIS_RECEIVE_SCALE_PARAMETERS  Parameters,
+    OUT PULONG                          BytesRead
     )
 {
     NDIS_STATUS                         ndisStatus;
 
     ASSERT3U(Parameters->Header.Type, ==, NDIS_OBJECT_TYPE_RSS_PARAMETERS);
-    ASSERT3U(Parameters->Header.Revision, ==, NDIS_RECEIVE_SCALE_PARAMETERS_REVISION_2);
-    ASSERT3U(Parameters->Header.Size, >=, NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_2);
+
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660) {
+        ASSERT3U(Parameters->Header.Revision, ==, NDIS_RECEIVE_SCALE_PARAMETERS_REVISION_3);
+        ASSERT3U(Parameters->Header.Size, >=, NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_3);
+    } else {
+        ASSERT3U(Parameters->Header.Revision, ==, NDIS_RECEIVE_SCALE_PARAMETERS_REVISION_2);
+        ASSERT3U(Parameters->Header.Size, >=, NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_2);
+    }
 
     if (!Adapter->Rss.Supported)
         return NDIS_STATUS_NOT_SUPPORTED;
@@ -956,6 +973,11 @@ AdapterGetReceiveScaleParameters(
 
     if (Adapter->Rss.HashEnabled)
         return NDIS_STATUS_NOT_SUPPORTED;
+
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660)
+        *BytesRead = NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_3;
+    else
+        *BytesRead = NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_2;
 
     if (!(Parameters->Flags & NDIS_RSS_PARAM_FLAG_DISABLE_RSS)) {
         Adapter->Rss.ScaleEnabled = TRUE;
@@ -976,6 +998,7 @@ AdapterGetReceiveScaleParameters(
                                          Parameters->HashSecretKeySize);
         if (ndisStatus != NDIS_STATUS_SUCCESS)
             goto fail;
+        *BytesRead += Parameters->HashSecretKeySize;
     }
 
     if (!(Parameters->Flags & NDIS_RSS_PARAM_FLAG_ITABLE_UNCHANGED)) {
@@ -984,6 +1007,7 @@ AdapterGetReceiveScaleParameters(
                                            Parameters->IndirectionTableSize);
         if (ndisStatus != NDIS_STATUS_SUCCESS)
             goto fail;
+        *BytesRead += Parameters->IndirectionTableSize;
     }
 
     DisplayRss(&Adapter->Rss);
@@ -2111,7 +2135,8 @@ AdapterSetInformation(
         if (BufferLength == BytesNeeded) {
             ndisStatus = AdapterSetPacketFilter(Adapter,
                                                 (PULONG)Buffer);
-            BytesRead = sizeof(ULONG);
+            if (ndisStatus == NDIS_STATUS_SUCCESS)
+                BytesRead = sizeof(ULONG);
         }
         break;
 
@@ -2141,24 +2166,26 @@ AdapterSetInformation(
         break;
 
     case OID_TCP_OFFLOAD_PARAMETERS:
-        BytesNeeded = NDIS_OFFLOAD_PARAMETERS_REVISION_2;
+        BytesNeeded = NDIS_SIZEOF_OFFLOAD_PARAMETERS_REVISION_3;
         if (BufferLength >= BytesNeeded) {
             ndisStatus = AdapterGetTcpOffloadParameters(Adapter,
                                                         (PNDIS_OFFLOAD_PARAMETERS)Buffer);
             if (ndisStatus == NDIS_STATUS_SUCCESS)
-                BytesRead = NDIS_OFFLOAD_PARAMETERS_REVISION_2;
+                BytesRead = NDIS_SIZEOF_OFFLOAD_PARAMETERS_REVISION_3;
         } else {
             ndisStatus = NDIS_STATUS_INVALID_LENGTH;
         }
         break;
 
     case OID_GEN_RECEIVE_SCALE_PARAMETERS:
-        BytesNeeded = NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_1;
+        if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660)
+            BytesNeeded = NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_3;
+        else
+            BytesNeeded = NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_2;
         if (BufferLength >= BytesNeeded) {
             ndisStatus = AdapterGetReceiveScaleParameters(Adapter,
-                                                          (PNDIS_RECEIVE_SCALE_PARAMETERS)Buffer);
-            if (ndisStatus == NDIS_STATUS_SUCCESS)
-                BytesRead = sizeof(NDIS_RECEIVE_SCALE_PARAMETERS);
+                                                          (PNDIS_RECEIVE_SCALE_PARAMETERS)Buffer,
+                                                          &BytesRead);
         } else {
             ndisStatus = NDIS_STATUS_INVALID_LENGTH;
         }
@@ -2183,7 +2210,7 @@ AdapterSetInformation(
         /*FALLTHRU*/
     default:
         if (Warn)
-            Warning("UNSUPPORTED OID %08x\n", Request->DATA.QUERY_INFORMATION.Oid);
+            Warning("UNSUPPORTED OID %08x\n", Request->DATA.SET_INFORMATION.Oid);
 
         ndisStatus = NDIS_STATUS_NOT_SUPPORTED;
         break;
@@ -2384,11 +2411,19 @@ AdapterQueryInformation(
 
     case OID_GEN_DRIVER_VERSION:
         BytesNeeded = sizeof(ULONG);
-        ndisStatus = __SetUlong(Buffer,
-                                BufferLength,
-                                (NDIS_MINIPORT_MAJOR_VERSION << 8) |
-                                NDIS_MINIPORT_MINOR_VERSION,
-                                &BytesWritten);
+        if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660) {
+            ndisStatus = __SetUlong(Buffer,
+                                    BufferLength,
+                                    (NDIS_MINIPORT_MAJOR_VERSION << 8) |
+                                    NDIS_MINIPORT_MINOR_VERSION,
+                                    &BytesWritten);
+        } else {
+            ndisStatus = __SetUlong(Buffer,
+                                    BufferLength,
+                                    (NDIS_MINIPORT_MINIMUM_MAJOR_VERSION << 8) |
+                                    NDIS_MINIPORT_MINIMUM_MINOR_VERSION,
+                                    &BytesWritten);
+        }
         break;
 
     case OID_GEN_MAC_OPTIONS:
@@ -2729,9 +2764,9 @@ AdapterQueryInformation(
     case OID_GEN_MAC_ADDRESS:
     case OID_GEN_MAX_LINK_SPEED:
         // ignore these common unwanted OIDs
-	case OID_GEN_INIT_TIME_MS:
-	case OID_GEN_RESET_COUNTS:
-	case OID_GEN_MEDIA_SENSE_COUNTS:
+    case OID_GEN_INIT_TIME_MS:
+    case OID_GEN_RESET_COUNTS:
+    case OID_GEN_MEDIA_SENSE_COUNTS:
         Warn = FALSE;
         /*FALLTHRU*/
     default:
@@ -2971,6 +3006,11 @@ AdapterSetGeneralAttributes(
     NDIS_STATUS                                 ndisStatus;
     NTSTATUS                                    status;
 
+    RtlZeroMemory(&Adapter->Capabilities, sizeof(Adapter->Capabilities));
+    Adapter->Capabilities.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
+    Adapter->Capabilities.Header.Revision = NDIS_PM_CAPABILITIES_REVISION_2;
+    Adapter->Capabilities.Header.Size = NDIS_SIZEOF_NDIS_PM_CAPABILITIES_REVISION_2;
+
     RtlZeroMemory(&Attribs, sizeof(Attribs));
     Attribs.Header.Type = NDIS_OBJECT_TYPE_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES;
     Attribs.Header.Revision = NDIS_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES_REVISION_2;
@@ -3051,8 +3091,14 @@ AdapterSetGeneralAttributes(
 
     RtlZeroMemory(&Rss, sizeof(Rss));
     Rss.Header.Type = NDIS_OBJECT_TYPE_RSS_CAPABILITIES;
-    Rss.Header.Revision = NDIS_RECEIVE_SCALE_CAPABILITIES_REVISION_2;
-    Rss.Header.Size = NDIS_SIZEOF_RECEIVE_SCALE_CAPABILITIES_REVISION_2;
+
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660) {
+        Rss.Header.Revision = NDIS_RECEIVE_SCALE_CAPABILITIES_REVISION_3;
+        Rss.Header.Size = NDIS_SIZEOF_RECEIVE_SCALE_CAPABILITIES_REVISION_3;
+    } else {
+        Rss.Header.Revision = NDIS_RECEIVE_SCALE_CAPABILITIES_REVISION_2;
+        Rss.Header.Size = NDIS_SIZEOF_RECEIVE_SCALE_CAPABILITIES_REVISION_2;
+    }
 
     Rss.CapabilitiesFlags = NDIS_RSS_CAPS_MESSAGE_SIGNALED_INTERRUPTS |
                             NDIS_RSS_CAPS_CLASSIFICATION_AT_ISR |
@@ -3135,8 +3181,14 @@ AdapterSetOffloadAttributes(
 
     RtlZeroMemory(&Supported, sizeof(Supported));
     Supported.Header.Type = NDIS_OBJECT_TYPE_OFFLOAD;
-    Supported.Header.Revision = NDIS_OFFLOAD_REVISION_2;
-    Supported.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_2;
+
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660) {
+        Supported.Header.Revision = NDIS_OFFLOAD_REVISION_4;
+        Supported.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_4;
+    } else {
+        Supported.Header.Revision = NDIS_OFFLOAD_REVISION_3;
+        Supported.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_3;
+    }
 
     Supported.Checksum.IPv4Receive.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
 
