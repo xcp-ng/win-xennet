@@ -342,9 +342,18 @@ MiniportRegister(
     MiniportDriverCharacteristics.Header.Size = NDIS_SIZEOF_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_2;
     MiniportDriverCharacteristics.Header.Revision = NDIS_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_2;
 
-    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660) {
+#ifdef NDIS_RUNTIME_VERSION_685
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_685) {
+        MiniportDriverCharacteristics.Header.Size = NDIS_SIZEOF_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_3;
+        MiniportDriverCharacteristics.Header.Revision = NDIS_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_3;
+
         MiniportDriverCharacteristics.MajorNdisVersion = NDIS_MINIPORT_MAJOR_VERSION; // 6
-        MiniportDriverCharacteristics.MinorNdisVersion = NDIS_MINIPORT_MINOR_VERSION; // 60
+        MiniportDriverCharacteristics.MinorNdisVersion = NDIS_MINIPORT_MINOR_VERSION; // 85
+    } else
+#endif
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660) {
+        MiniportDriverCharacteristics.MajorNdisVersion = 6;
+        MiniportDriverCharacteristics.MinorNdisVersion = 60;
     } else {
         MiniportDriverCharacteristics.MajorNdisVersion = NDIS_MINIPORT_MINIMUM_MAJOR_VERSION; // 6
         MiniportDriverCharacteristics.MinorNdisVersion = NDIS_MINIPORT_MINIMUM_MINOR_VERSION; // 30

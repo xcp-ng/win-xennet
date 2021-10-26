@@ -360,6 +360,12 @@ AdapterIndicateOffloadChanged(
     RtlZeroMemory(&Current, sizeof(Current));
     Current.Header.Type = NDIS_OBJECT_TYPE_OFFLOAD;
 
+#ifdef NDIS_RUNTIME_VERSION_685
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_685) {
+        Current.Header.Revision = NDIS_OFFLOAD_REVISION_6;
+        Current.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_6;
+    } else
+#endif
     if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660) {
         Current.Header.Revision = NDIS_OFFLOAD_REVISION_4;
         Current.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_4;
@@ -453,6 +459,11 @@ AdapterIndicateOffloadChanged(
     Status.StatusCode = NDIS_STATUS_TASK_OFFLOAD_CURRENT_CONFIG;
     Status.StatusBuffer = &Current;
 
+#ifdef NDIS_RUNTIME_VERSION_685
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_685)
+        Status.StatusBufferSize = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_6;
+    else
+#endif
     if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660)
         Status.StatusBufferSize = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_4;
     else
@@ -2411,19 +2422,22 @@ AdapterQueryInformation(
 
     case OID_GEN_DRIVER_VERSION:
         BytesNeeded = sizeof(ULONG);
-        if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660) {
-            ndisStatus = __SetUlong(Buffer,
-                                    BufferLength,
-                                    (NDIS_MINIPORT_MAJOR_VERSION << 8) |
-                                    NDIS_MINIPORT_MINOR_VERSION,
-                                    &BytesWritten);
-        } else {
-            ndisStatus = __SetUlong(Buffer,
-                                    BufferLength,
-                                    (NDIS_MINIPORT_MINIMUM_MAJOR_VERSION << 8) |
-                                    NDIS_MINIPORT_MINIMUM_MINOR_VERSION,
-                                    &BytesWritten);
-        }
+#ifdef NDIS_RUNTIME_VERSION_685
+        if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_685)
+            Value32 = (NDIS_MINIPORT_MAJOR_VERSION << 8) |
+                       NDIS_MINIPORT_MINOR_VERSION;
+        else
+#endif
+        if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660)
+            Value32 = (6 << 8) | 60; // NDIS 6.60
+        else
+            Value32 = (NDIS_MINIPORT_MINIMUM_MAJOR_VERSION << 8) |
+                       NDIS_MINIPORT_MINIMUM_MINOR_VERSION;
+
+        ndisStatus = __SetUlong(Buffer,
+                                BufferLength,
+                                Value32,
+                                &BytesWritten);
         break;
 
     case OID_GEN_MAC_OPTIONS:
@@ -3182,6 +3196,12 @@ AdapterSetOffloadAttributes(
     RtlZeroMemory(&Supported, sizeof(Supported));
     Supported.Header.Type = NDIS_OBJECT_TYPE_OFFLOAD;
 
+#ifdef NDIS_RUNTIME_VERSION_685
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_685) {
+        Supported.Header.Revision = NDIS_OFFLOAD_REVISION_6;
+        Supported.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_6;
+    } else
+#endif
     if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660) {
         Supported.Header.Revision = NDIS_OFFLOAD_REVISION_4;
         Supported.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_4;
