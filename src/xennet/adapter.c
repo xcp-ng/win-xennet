@@ -199,75 +199,39 @@ AdapterAllocateComplete (
 
 static VOID
 AdapterVifCallback(
-    IN  PVOID                       Context,
-    IN  XENVIF_VIF_CALLBACK_TYPE    Type,
-    ...
+    IN  PVOID                           Context,
+    IN  XENVIF_VIF_CALLBACK_TYPE        Type,
+    IN  PXENVIF_VIF_CALLBACK_PARAMETERS Parameters
     )
 {
-    PXENNET_ADAPTER     Adapter = Context;
-    va_list             Arguments;
-
-    va_start(Arguments, Type);
+    PXENNET_ADAPTER                     Adapter = Context;
 
     switch (Type) {
-    case XENVIF_TRANSMITTER_RETURN_PACKET: {
-        PVOID                                       Cookie;
-        PXENVIF_TRANSMITTER_PACKET_COMPLETION_INFO  Completion;
-
-        Cookie = va_arg(Arguments, PVOID);
-        Completion = va_arg(Arguments, PXENVIF_TRANSMITTER_PACKET_COMPLETION_INFO);
-
+    case XENVIF_TRANSMITTER_RETURN_PACKET:
         TransmitterReturnPacket(Adapter->Transmitter,
-                                Cookie,
-                                Completion);
+                                Parameters->TransmitterReturnPacket.Cookie,
+                                Parameters->TransmitterReturnPacket.Completion);
         break;
-    }
-    case XENVIF_RECEIVER_QUEUE_PACKET: {
-        ULONG                           Index;
-        PMDL                            Mdl;
-        ULONG                           Offset;
-        ULONG                           Length;
-        XENVIF_PACKET_CHECKSUM_FLAGS    Flags;
-        USHORT                          MaximumSegmentSize;
-        USHORT                          TagControlInformation;
-        PXENVIF_PACKET_INFO             Info;
-        PXENVIF_PACKET_HASH             Hash;
-        BOOLEAN                         More;
-        PVOID                           Cookie;
 
-        Index = va_arg(Arguments, ULONG);
-        Mdl = va_arg(Arguments, PMDL);
-        Offset = va_arg(Arguments, ULONG);
-        Length = va_arg(Arguments, ULONG);
-        Flags = va_arg(Arguments, XENVIF_PACKET_CHECKSUM_FLAGS);
-        MaximumSegmentSize = va_arg(Arguments, USHORT);
-        TagControlInformation = va_arg(Arguments, USHORT);
-        Info = va_arg(Arguments, PXENVIF_PACKET_INFO);
-        Hash = va_arg(Arguments, PXENVIF_PACKET_HASH);
-        More = va_arg(Arguments, BOOLEAN);
-        Cookie = va_arg(Arguments, PVOID);
-
+    case XENVIF_RECEIVER_QUEUE_PACKET:
         ReceiverQueuePacket(Adapter->Receiver,
-                            Index,
-                            Mdl,
-                            Offset,
-                            Length,
-                            Flags,
-                            MaximumSegmentSize,
-                            TagControlInformation,
-                            Info,
-                            Hash,
-                            More,
-                            Cookie);
+                            Parameters->ReceiverQueuePacket.Index,
+                            Parameters->ReceiverQueuePacket.Mdl,
+                            Parameters->ReceiverQueuePacket.Offset,
+                            Parameters->ReceiverQueuePacket.Length,
+                            Parameters->ReceiverQueuePacket.Flags,
+                            Parameters->ReceiverQueuePacket.MaximumSegmentSize,
+                            Parameters->ReceiverQueuePacket.TagControlInformation,
+                            Parameters->ReceiverQueuePacket.Info,
+                            Parameters->ReceiverQueuePacket.Hash,
+                            Parameters->ReceiverQueuePacket.More,
+                            Parameters->ReceiverQueuePacket.Cookie);
         break;
-    }
-    case XENVIF_MAC_STATE_CHANGE: {
+
+    case XENVIF_MAC_STATE_CHANGE:
         AdapterMediaStateChange(Adapter);
         break;
     }
-    }
-
-    va_end(Arguments);
 }
 
 static VOID

@@ -388,32 +388,8 @@ typedef enum _XENVIF_VIF_CALLBACK_TYPE {
     XENVIF_MAC_STATE_CHANGE
 } XENVIF_VIF_CALLBACK_TYPE, *PXENVIF_VIF_CALLBACK_TYPE;
 
-/*! \typedef XENVIF_VIF_ACQUIRE
-    \brief Acquire a reference to the VIF interface
-
-    \param Interface The interface header
-*/  
-typedef NTSTATUS
-(*XENVIF_VIF_ACQUIRE)(
-    IN  PINTERFACE  Interface
-    );
-
-/*! \typedef XENVIF_VIF_RELEASE
-    \brief Release a reference to the VIF interface
-
-    \param Interface The interface header
-*/  
-typedef VOID
-(*XENVIF_VIF_RELEASE)(
-    IN  PINTERFACE  Interface
-    );
-
-/*! \typedef XENVIF_VIF_CALLBACK
-    \brief Provider to subscriber callback function
-
-    \param Argument An optional context argument passed to the callback
-    \param Type The callback type
-    \param ... Additional paramaters required by \a Type
+/*! \typedef XENVIF_VIF_CALLBACK_PARAMETERS_V9
+    \brief VIF interface version 9 parameters for provider to subscriber callback function
 
     \b XENVIF_TRANSMITTER_RETURN_PACKET:
     \param Cookie Cookie supplied to XENVIF_TRANSMITTER_QUEUE_PACKET
@@ -435,11 +411,74 @@ typedef VOID
     \b XENVIF_MAC_STATE_CHANGE:
     No additional arguments
 */
+union _XENVIF_VIF_CALLBACK_PARAMETERS_V9 {
+    struct {
+        PVOID                                       Cookie;
+        PXENVIF_TRANSMITTER_PACKET_COMPLETION_INFO  Completion;
+    } TransmitterReturnPacket;
+    struct {
+        ULONG                           Index;
+        PMDL                            Mdl;
+        ULONG                           Offset;
+        ULONG                           Length;
+        XENVIF_PACKET_CHECKSUM_FLAGS    Flags;
+        USHORT                          MaximumSegmentSize;
+        USHORT                          TagControlInformation;
+        PXENVIF_PACKET_INFO             Info;
+        PXENVIF_PACKET_HASH             Hash;
+        BOOLEAN                         More;
+        PVOID                           Cookie;
+    } ReceiverQueuePacket;
+};
+
+/*! \typedef XENVIF_VIF_ACQUIRE
+    \brief Acquire a reference to the VIF interface
+
+    \param Interface The interface header
+*/  
+typedef NTSTATUS
+(*XENVIF_VIF_ACQUIRE)(
+    IN  PINTERFACE  Interface
+    );
+
+/*! \typedef XENVIF_VIF_RELEASE
+    \brief Release a reference to the VIF interface
+
+    \param Interface The interface header
+*/  
 typedef VOID
-(*XENVIF_VIF_CALLBACK)(
+(*XENVIF_VIF_RELEASE)(
+    IN  PINTERFACE  Interface
+    );
+
+typedef VOID
+(*XENVIF_VIF_CALLBACK_V8)(
     IN  PVOID                       Argument OPTIONAL,
     IN  XENVIF_VIF_CALLBACK_TYPE    Type,
     ...
+    );
+
+typedef union _XENVIF_VIF_CALLBACK_PARAMETERS_V9 XENVIF_VIF_CALLBACK_PARAMETERS, *PXENVIF_VIF_CALLBACK_PARAMETERS;
+
+/*! \typedef XENVIF_VIF_CALLBACK
+    \brief Provider to subscriber callback function
+
+    \param Argument An optional context argument passed to the callback
+    \param Type The callback type
+    \param Parameters The callback parameters
+*/
+typedef VOID
+(*XENVIF_VIF_CALLBACK)(
+    IN  PVOID                           Argument OPTIONAL,
+    IN  XENVIF_VIF_CALLBACK_TYPE        Type,
+    IN  PXENVIF_VIF_CALLBACK_PARAMETERS Parameters
+    );
+
+typedef NTSTATUS
+(*XENVIF_VIF_ENABLE_V8)(
+    IN  PINTERFACE              Interface,
+    IN  XENVIF_VIF_CALLBACK_V8  Callback,
+    IN  PVOID                   Argument OPTIONAL
     );
 
 /*! \typedef XENVIF_VIF_ENABLE
@@ -531,19 +570,6 @@ typedef VOID
 (*XENVIF_VIF_RECEIVER_RETURN_PACKET)(
     IN  PINTERFACE  Interface,
     IN  PVOID       Cookie
-    );
-
-typedef NTSTATUS
-(*XENVIF_VIF_TRANSMITTER_QUEUE_PACKET_V6)(
-    IN  PINTERFACE                  Interface,
-    IN  PMDL                        Mdl,
-    IN  ULONG                       Offset,
-    IN  ULONG                       Length,
-    IN  XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions,
-    IN  USHORT                      MaximumSegmentSize,
-    IN  USHORT                      TagControlInformation,
-    IN  PXENVIF_PACKET_HASH         Hash,
-    IN  PVOID                       Cookie
     );
 
 /*! \typedef XENVIF_VIF_TRANSMITTER_QUEUE_PACKET
@@ -826,74 +852,6 @@ typedef NTSTATUS
 DEFINE_GUID(GUID_XENVIF_VIF_INTERFACE, 
 0x76f279cd, 0xca11, 0x418b, 0x92, 0xe8, 0xc5, 0x7f, 0x77, 0xde, 0xe, 0x2e);
 
-/*! \struct _XENVIF_VIF_INTERFACE_V6
-    \brief VIF interface version 6
-    \ingroup interfaces
-*/
-struct _XENVIF_VIF_INTERFACE_V6 {
-    INTERFACE                                       Interface;
-    XENVIF_VIF_ACQUIRE                              Acquire;
-    XENVIF_VIF_RELEASE                              Release;
-    XENVIF_VIF_ENABLE                               Enable;
-    XENVIF_VIF_DISABLE                              Disable;
-    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
-    XENVIF_VIF_QUERY_RING_COUNT                     QueryRingCount;
-    XENVIF_VIF_UPDATE_HASH_MAPPING                  UpdateHashMapping;
-    XENVIF_VIF_RECEIVER_RETURN_PACKET               ReceiverReturnPacket;
-    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
-    XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE           ReceiverSetBackfillSize;
-    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
-    XENVIF_VIF_RECEIVER_SET_HASH_ALGORITHM          ReceiverSetHashAlgorithm;
-    XENVIF_VIF_RECEIVER_QUERY_HASH_CAPABILITIES     ReceiverQueryHashCapabilities;
-    XENVIF_VIF_RECEIVER_UPDATE_HASH_PARAMETERS      ReceiverUpdateHashParameters;
-    XENVIF_VIF_TRANSMITTER_QUEUE_PACKET_V6          TransmitterQueuePacket;
-    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
-    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
-    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
-    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
-    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
-    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
-    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
-    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
-    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
-    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
-    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
-};
-
-/*! \struct _XENVIF_VIF_INTERFACE_V7
-    \brief VIF interface version 7
-    \ingroup interfaces
-*/
-struct _XENVIF_VIF_INTERFACE_V7 {
-    INTERFACE                                       Interface;
-    XENVIF_VIF_ACQUIRE                              Acquire;
-    XENVIF_VIF_RELEASE                              Release;
-    XENVIF_VIF_ENABLE                               Enable;
-    XENVIF_VIF_DISABLE                              Disable;
-    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
-    XENVIF_VIF_QUERY_RING_COUNT                     QueryRingCount;
-    XENVIF_VIF_UPDATE_HASH_MAPPING                  UpdateHashMapping;
-    XENVIF_VIF_RECEIVER_RETURN_PACKET               ReceiverReturnPacket;
-    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
-    XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE           ReceiverSetBackfillSize;
-    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
-    XENVIF_VIF_RECEIVER_SET_HASH_ALGORITHM          ReceiverSetHashAlgorithm;
-    XENVIF_VIF_RECEIVER_QUERY_HASH_CAPABILITIES     ReceiverQueryHashCapabilities;
-    XENVIF_VIF_RECEIVER_UPDATE_HASH_PARAMETERS      ReceiverUpdateHashParameters;
-    XENVIF_VIF_TRANSMITTER_QUEUE_PACKET             TransmitterQueuePacket;
-    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
-    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
-    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
-    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
-    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
-    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
-    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
-    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
-    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
-    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
-    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
-};
-
 /*! \struct _XENVIF_VIF_INTERFACE_V8
     \brief VIF interface version 8
     \ingroup interfaces
@@ -902,6 +860,40 @@ struct _XENVIF_VIF_INTERFACE_V8 {
     INTERFACE                                       Interface;
     XENVIF_VIF_ACQUIRE                              Acquire;
     XENVIF_VIF_RELEASE                              Release;
+    XENVIF_VIF_ENABLE_V8                            EnableVersion8;
+    XENVIF_VIF_DISABLE                              Disable;
+    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
+    XENVIF_VIF_QUERY_RING_COUNT                     QueryRingCount;
+    XENVIF_VIF_UPDATE_HASH_MAPPING                  UpdateHashMapping;
+    XENVIF_VIF_RECEIVER_RETURN_PACKET               ReceiverReturnPacket;
+    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
+    XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE           ReceiverSetBackfillSize;
+    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
+    XENVIF_VIF_RECEIVER_SET_HASH_ALGORITHM          ReceiverSetHashAlgorithm;
+    XENVIF_VIF_RECEIVER_QUERY_HASH_CAPABILITIES     ReceiverQueryHashCapabilities;
+    XENVIF_VIF_RECEIVER_UPDATE_HASH_PARAMETERS      ReceiverUpdateHashParameters;
+    XENVIF_VIF_TRANSMITTER_QUEUE_PACKET             TransmitterQueuePacket;
+    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
+    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
+    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
+    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
+    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
+    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
+    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
+    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
+    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
+    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
+    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
+};
+
+/*! \struct _XENVIF_VIF_INTERFACE_V9
+    \brief VIF interface version 9
+    \ingroup interfaces
+*/
+struct _XENVIF_VIF_INTERFACE_V9 {
+    INTERFACE                                       Interface;
+    XENVIF_VIF_ACQUIRE                              Acquire;
+    XENVIF_VIF_RELEASE                              Release;
     XENVIF_VIF_ENABLE                               Enable;
     XENVIF_VIF_DISABLE                              Disable;
     XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
@@ -928,7 +920,7 @@ struct _XENVIF_VIF_INTERFACE_V8 {
     XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
 };
 
-typedef struct _XENVIF_VIF_INTERFACE_V8 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTERFACE;
+typedef struct _XENVIF_VIF_INTERFACE_V9 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTERFACE;
 
 /*! \def XENVIF_VIF
     \brief Macro at assist in method invocation
@@ -938,7 +930,7 @@ typedef struct _XENVIF_VIF_INTERFACE_V8 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTER
 
 #endif  // _WINDLL
 
-#define XENVIF_VIF_INTERFACE_VERSION_MIN    6
-#define XENVIF_VIF_INTERFACE_VERSION_MAX    8
+#define XENVIF_VIF_INTERFACE_VERSION_MIN    8
+#define XENVIF_VIF_INTERFACE_VERSION_MAX    9
 
 #endif  // _XENVIF_INTERFACE_H
