@@ -378,7 +378,8 @@ static FORCEINLINE VOID __IndicateReceiveNetBufferLists(
 static VOID
 __ReceiverPushPackets(
     IN  PXENNET_RECEIVER    Receiver,
-    IN  ULONG               Index
+    IN  ULONG               Index,
+    OUT PBOOLEAN            Pause
     )
 {
     ULONG                   Flags;
@@ -412,8 +413,10 @@ __ReceiverPushPackets(
             NDIS_RECEIVE_FLAGS_PERFECT_FILTERED;
 
     ASSERT3S(Indicated - Returned, >=, 0);
-    if (Indicated - Returned > IN_NDIS_MAX)
+    if (Indicated - Returned > IN_NDIS_MAX) {
         Flags |= NDIS_RECEIVE_FLAGS_RESOURCES;
+        *Pause = TRUE;
+    }
 
     __IndicateReceiveNetBufferLists(Receiver,
                                     NetBufferList,
@@ -544,12 +547,14 @@ ReceiverQueuePacket(
     IN  PXENVIF_PACKET_INFO             Info,
     IN  PXENVIF_PACKET_HASH             Hash,
     IN  BOOLEAN                         More,
-    IN  PVOID                           Cookie
+    IN  PVOID                           Cookie,
+    OUT PBOOLEAN                        Pause
     )
 {
     PXENVIF_VIF_INTERFACE               VifInterface;
     PNET_BUFFER_LIST                    NetBufferList;
     PXENNET_RECEIVER_QUEUE              Queue;
+    BOOLEAN                             Push = !More;
 
     VifInterface = AdapterGetVifInterface(Receiver->Adapter);
 
@@ -583,11 +588,18 @@ ReceiverQueuePacket(
     }
     Queue->Count++;
 
+    // If we need to indicate low resources, then push the queued packets to NDIS.
+    if (!Push &&
+        Receiver->Indicated + Queue->Count - Receiver->Returned > IN_NDIS_MAX)
+        Push = TRUE;
+
     KeReleaseSpinLockFromDpcLevel(&Queue->Lock);
 
 done:
-    if (!More)
-        __ReceiverPushPackets(Receiver, Index);
+    *Pause = FALSE;
+
+    if (Push)
+        __ReceiverPushPackets(Receiver, Index, Pause);
 }
 
 PXENVIF_VIF_OFFLOAD_OPTIONS

@@ -68,7 +68,8 @@ ReceiverQueuePacket(
     IN  PXENVIF_PACKET_INFO             Info,
     IN  PXENVIF_PACKET_HASH             Hash,
     IN  BOOLEAN                         More,
-    IN  PVOID                           Cookie
+    IN  PVOID                           Cookie,
+    OUT PBOOLEAN                        Pause
     );
 
 extern PXENVIF_VIF_OFFLOAD_OPTIONS

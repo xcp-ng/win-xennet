@@ -225,7 +225,8 @@ AdapterVifCallback(
                             Parameters->ReceiverQueuePacket.Info,
                             Parameters->ReceiverQueuePacket.Hash,
                             Parameters->ReceiverQueuePacket.More,
-                            Parameters->ReceiverQueuePacket.Cookie);
+                            Parameters->ReceiverQueuePacket.Cookie,
+                            &Parameters->ReceiverQueuePacket.Pause);
         break;
 
     case XENVIF_MAC_STATE_CHANGE:
