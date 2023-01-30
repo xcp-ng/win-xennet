@@ -2130,6 +2130,7 @@ AdapterSetInformation(
         break;
 
     case OID_OFFLOAD_ENCAPSULATION:
+        __analysis_assume(BytesNeeded > 0);
         BytesNeeded = NDIS_SIZEOF_OFFLOAD_ENCAPSULATION_REVISION_1;
         if (BufferLength >= BytesNeeded) {
             ndisStatus = AdapterGetOffloadEncapsulation(Adapter,
