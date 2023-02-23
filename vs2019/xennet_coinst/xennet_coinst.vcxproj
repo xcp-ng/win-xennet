@@ -35,6 +35,9 @@
       <AdditionalDependencies>setupapi.lib;iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <CETCompat>true</CETCompat>
     </Link>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>..\..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
     </DriverSign>
@@ -58,6 +61,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\src\coinst\xennet_coinst.def" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\..\src\coinst\xennet_coinst.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

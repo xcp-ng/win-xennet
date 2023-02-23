@@ -32,6 +32,9 @@
       <ModuleDefinitionFile>../../src/coinst/xennet_coinst.def</ModuleDefinitionFile>
       <AdditionalDependencies>setupapi.lib;iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>..\..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Platform)'=='Win32'">
     <ClCompile>
@@ -52,6 +55,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\src\coinst\xennet_coinst.def" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\..\src\coinst\xennet_coinst.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
