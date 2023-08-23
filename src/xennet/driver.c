@@ -93,7 +93,7 @@ QueryCapabilities(
 
     StackLocation = IoGetCurrentIrpStackLocation(Irp);
 
-    Context = ExAllocatePoolWithTag(NonPagedPool, sizeof (XENNET_CONTEXT), ' TEN');
+    Context = ALLOCATE_POOL(NonPagedPool, sizeof (XENNET_CONTEXT), ' TEN');
     if (Context != NULL) {
         Context->Capabilities = StackLocation->Parameters.DeviceCapabilities.Capabilities;
         Context->CompletionRoutine = StackLocation->CompletionRoutine;

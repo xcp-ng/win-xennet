@@ -53,7 +53,7 @@ TransmitterInitialize (
 {
     NTSTATUS                status;
 
-    *Transmitter = ExAllocatePoolWithTag(NonPagedPool,
+    *Transmitter = ALLOCATE_POOL(NonPagedPool,
                                          sizeof(XENNET_TRANSMITTER),
                                          TRANSMITTER_POOL_TAG);
 
