@@ -37,6 +37,7 @@
 #include "adapter.h"
 #include "dbg_print.h"
 #include "assert.h"
+#include "util.h"
 
 static
 _Function_class_(SET_OPTIONS)
@@ -164,7 +165,16 @@ MiniportOidRequest(
         case NdisRequestQueryStatistics:
             NdisStatus = AdapterQueryInformation(Adapter, OidRequest);
             break;
-
+        case NdisRequestOpen:
+        case NdisRequestClose:
+        case NdisRequestSend:
+        case NdisRequestTransferData:
+        case NdisRequestReset:
+        case NdisRequestGeneric1:
+        case NdisRequestGeneric2:
+        case NdisRequestGeneric3:
+        case NdisRequestGeneric4:
+        case NdisRequestMethod:
         default:
             NdisStatus = NDIS_STATUS_NOT_SUPPORTED;
             break;

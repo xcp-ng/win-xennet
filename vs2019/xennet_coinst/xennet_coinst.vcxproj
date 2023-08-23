@@ -32,6 +32,9 @@
       <ModuleDefinitionFile>../../src/coinst/xennet_coinst.def</ModuleDefinitionFile>
       <AdditionalDependencies>setupapi.lib;iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+	<DriverSign>
+      <AdditionalOptions>/fdws %(AdditionalOptions)</AdditionalOptions>
+    </DriverSign>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Platform)'=='Win32'">
     <ClCompile>

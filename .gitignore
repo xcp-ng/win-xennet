@@ -20,3 +20,4 @@ vs2019/Windows10Release/
 vs2019/*/Windows10Release/
 vs2019/*/x64/
 vs2019/xennet.inf
+vs2019/.vs/xennet/v16/.suo

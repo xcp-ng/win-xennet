@@ -2051,6 +2051,26 @@ AdapterMediaStateChange(
     NdisMIndicateStatusEx(Adapter->NdisAdapterHandle, &StatusIndication);
 }
 
+void NdisDeviceStateInformation(BOOLEAN setPower, ULONG BufferLength, PVOID Buffer, const PWCHAR AdapterLocation) {
+#define _HANDLE_POWER_STATE(_state) \
+    case NdisDeviceState ## _state : \
+        Info("%s: %s: " #_state "\n", AdapterLocation, setPower ? "SET_POWER" : "QUERY_POWER"); \
+        break;
+
+	if (BufferLength >= sizeof(NDIS_DEVICE_POWER_STATE)) {
+		PNDIS_DEVICE_POWER_STATE PowerState = (PNDIS_DEVICE_POWER_STATE)Buffer;
+		switch (*PowerState) {
+			_HANDLE_POWER_STATE(D0)
+			_HANDLE_POWER_STATE(D1)
+			_HANDLE_POWER_STATE(D2)
+			_HANDLE_POWER_STATE(D3)
+			_HANDLE_POWER_STATE(Unspecified)
+			_HANDLE_POWER_STATE(Maximum)
+		}
+	}
+}
+
+
 NDIS_STATUS
 AdapterSetInformation(
     IN  PXENNET_ADAPTER     Adapter,
@@ -2072,33 +2092,7 @@ AdapterSetInformation(
 
     switch (Request->DATA.SET_INFORMATION.Oid) {
     case OID_PNP_SET_POWER:
-        BytesNeeded = sizeof(NDIS_DEVICE_POWER_STATE);
-        if (BufferLength >= BytesNeeded) {
-            PNDIS_DEVICE_POWER_STATE PowerState;
-
-            PowerState = (PNDIS_DEVICE_POWER_STATE)Buffer;
-            switch (*PowerState) {
-            case NdisDeviceStateD0:
-                Info("%ws: SET_POWER: D0\n",
-                     Adapter->Location);
-                break;
-
-            case NdisDeviceStateD1:
-                Info("%ws: SET_POWER: D1\n",
-                     Adapter->Location);
-                break;
-
-            case NdisDeviceStateD2:
-                Info("%ws: SET_POWER: D2\n",
-                     Adapter->Location);
-                break;
-
-            case NdisDeviceStateD3:
-                Info("%ws: SET_POWER: D3\n",
-                     Adapter->Location);
-                break;
-            }
-        }
+        NdisDeviceStateInformation(TRUE, BufferLength, Buffer, Adapter->Location);
         // do nothing
         break;
 
@@ -2287,34 +2281,7 @@ AdapterQueryInformation(
         break;
 
     case OID_PNP_QUERY_POWER:
-        BytesNeeded = sizeof(NDIS_DEVICE_POWER_STATE);
-
-        if (BufferLength >= BytesNeeded) {
-            PNDIS_DEVICE_POWER_STATE PowerState;
-
-            PowerState = (PNDIS_DEVICE_POWER_STATE)Buffer;
-            switch (*PowerState) {
-            case NdisDeviceStateD0:
-                Info("%ws: QUERY_POWER: D0\n",
-                     Adapter->Location);
-                break;
-
-            case NdisDeviceStateD1:
-                Info("%ws: QUERY_POWER: D1\n",
-                     Adapter->Location);
-                break;
-
-            case NdisDeviceStateD2:
-                Info("%ws: QUERY_POWER: D2\n",
-                     Adapter->Location);
-                break;
-
-            case NdisDeviceStateD3:
-                Info("%ws: QUERY_POWER: D3\n",
-                     Adapter->Location);
-                break;
-            }
-        }
+        NdisDeviceStateInformation(FALSE, BufferLength, Buffer, Adapter->Location);
 
         BytesWritten = 0;
         // do nothing

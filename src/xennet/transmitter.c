@@ -36,6 +36,7 @@
 #include <tcpip.h>
 #include "dbg_print.h"
 #include "assert.h"
+#include "util.h"
 
 struct _XENNET_TRANSMITTER {
     PXENNET_ADAPTER             Adapter;
@@ -53,7 +54,7 @@ TransmitterInitialize (
 {
     NTSTATUS                status;
 
-    *Transmitter = ExAllocatePoolWithTag(NonPagedPool,
+    *Transmitter = ALLOCATE_POOL(NonPagedPool,
                                          sizeof(XENNET_TRANSMITTER),
                                          TRANSMITTER_POOL_TAG);
 
@@ -322,6 +323,9 @@ __TransmitterSendNetBufferList(
         NTSTATUS            status;
 
         __TransmitterGetNetBufferList(Transmitter, NetBufferList);
+
+        /*  Added this assertion here because the compiler think (C28182) that NetBuffer could be NULL at this point */
+        ASSERT(NetBuffer != NULL);
 
         status = XENVIF_VIF(TransmitterQueuePacket,
                             AdapterGetVifInterface(Transmitter->Adapter),

@@ -37,6 +37,7 @@
 #include "miniport.h"
 #include "dbg_print.h"
 #include "assert.h"
+#include "util.h"
 
 typedef struct _XENNET_DRIVER {
     NDIS_HANDLE MiniportHandle;
@@ -93,7 +94,7 @@ QueryCapabilities(
 
     StackLocation = IoGetCurrentIrpStackLocation(Irp);
 
-    Context = ExAllocatePoolWithTag(NonPagedPool, sizeof (XENNET_CONTEXT), ' TEN');
+    Context = ALLOCATE_POOL(NonPagedPool, sizeof (XENNET_CONTEXT), ' TEN');
     if (Context != NULL) {
         Context->Capabilities = StackLocation->Parameters.DeviceCapabilities.Capabilities;
         Context->CompletionRoutine = StackLocation->CompletionRoutine;
