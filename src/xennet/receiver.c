@@ -247,7 +247,7 @@ __ReceiverReceivePacket(
                                                     Length,
                                                     Cookie);
     if (NetBufferList == NULL)
-        goto fail1;
+        return NULL;
 
     NetBufferList->SourceHandle = AdapterGetHandle(Receiver->Adapter);
 
@@ -272,8 +272,10 @@ __ReceiverReceivePacket(
                                        Ieee8021QInfo.TagHeader.CanonicalFormatId,
                                        Ieee8021QInfo.TagHeader.VlanId);
 
-        if (Ieee8021QInfo.TagHeader.VlanId != 0)
-            goto fail2;
+        if (Ieee8021QInfo.TagHeader.VlanId != 0) {
+            (VOID)__ReceiverReleaseNetBufferList(Receiver, NetBufferList, TRUE);
+            return NULL;
+        }
 
         NET_BUFFER_LIST_INFO(NetBufferList, Ieee8021QNetBufferListInfo) = Ieee8021QInfo.Value;
     }
@@ -284,6 +286,8 @@ __ReceiverReceivePacket(
                                           NdisHashFunctionToeplitz);
         break;
 
+    case XENVIF_PACKET_HASH_ALGORITHM_NONE:
+    case XENVIF_PACKET_HASH_ALGORITHM_UNSPECIFIED:
     default:
         goto done;
     }
@@ -309,6 +313,7 @@ __ReceiverReceivePacket(
                                       NDIS_HASH_TCP_IPV6);
         break;
 
+    case XENVIF_PACKET_HASH_TYPE_NONE:
     default:
         ASSERT(FALSE);
         break;
@@ -319,12 +324,6 @@ __ReceiverReceivePacket(
 
 done:
     return NetBufferList;
-
-fail2:
-    (VOID) __ReceiverReleaseNetBufferList(Receiver, NetBufferList, TRUE);
-
-fail1:
-    return NULL;
 }
 
 static FORCEINLINE VOID __IndicateReceiveNetBufferLists(
@@ -547,45 +546,41 @@ ReceiverQueuePacket(
     IN  PVOID                           Cookie
     )
 {
-    PXENVIF_VIF_INTERFACE               VifInterface;
-    PNET_BUFFER_LIST                    NetBufferList;
-    PXENNET_RECEIVER_QUEUE              Queue;
+	PXENVIF_VIF_INTERFACE VifInterface = AdapterGetVifInterface(Receiver->Adapter);
 
-    VifInterface = AdapterGetVifInterface(Receiver->Adapter);
-
-    NetBufferList = __ReceiverReceivePacket(Receiver,
-                                            Mdl,
-                                            Offset,
-                                            Length,
-                                            Flags,
-                                            MaximumSegmentSize,
-                                            TagControlInformation,
-                                            Info,
-                                            Hash,
-                                            Cookie);
+	PNET_BUFFER_LIST NetBufferList = __ReceiverReceivePacket(Receiver,
+		Mdl,
+		Offset,
+		Length,
+		Flags,
+		MaximumSegmentSize,
+		TagControlInformation,
+		Info,
+		Hash,
+		Cookie);
     if (NetBufferList == NULL) {
         XENVIF_VIF(ReceiverReturnPacket,
                    VifInterface,
                    Cookie);
-        goto done;
+    }
+    else {
+        PXENNET_RECEIVER_QUEUE Queue = &Receiver->Queue[Index];
+
+        KeAcquireSpinLockAtDpcLevel(&Queue->Lock);
+
+        if (Queue->Head == NULL) {
+            ASSERT3U(Queue->Count, == , 0);
+            Queue->Head = Queue->Tail = NetBufferList;
+        }
+        else {
+            NET_BUFFER_LIST_NEXT_NBL(Queue->Tail) = NetBufferList;
+            Queue->Tail = NetBufferList;
+        }
+        Queue->Count++;
+
+        KeReleaseSpinLockFromDpcLevel(&Queue->Lock);
     }
 
-    Queue = &Receiver->Queue[Index];
-
-    KeAcquireSpinLockAtDpcLevel(&Queue->Lock);
-
-    if (Queue->Head == NULL) {
-        ASSERT3U(Queue->Count, ==, 0);
-        Queue->Head = Queue->Tail = NetBufferList;
-    } else {
-        NET_BUFFER_LIST_NEXT_NBL(Queue->Tail) = NetBufferList;
-        Queue->Tail = NetBufferList;
-    }
-    Queue->Count++;
-
-    KeReleaseSpinLockFromDpcLevel(&Queue->Lock);
-
-done:
     if (!More)
         __ReceiverPushPackets(Receiver, Index);
 }

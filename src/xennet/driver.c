@@ -37,6 +37,7 @@
 #include "miniport.h"
 #include "dbg_print.h"
 #include "assert.h"
+#include "util.h"
 
 typedef struct _XENNET_DRIVER {
     NDIS_HANDLE MiniportHandle;
