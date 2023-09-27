@@ -1,4 +1,5 @@
-/* Copyright (c) Citrix Systems Inc.
+/* Copyright (c) Xen Project.
+ * Copyright (c) Cloud Software Group, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms,
@@ -37,7 +38,6 @@
 #include "adapter.h"
 #include "dbg_print.h"
 #include "assert.h"
-#include "util.h"
 
 static
 _Function_class_(SET_OPTIONS)
@@ -165,16 +165,7 @@ MiniportOidRequest(
         case NdisRequestQueryStatistics:
             NdisStatus = AdapterQueryInformation(Adapter, OidRequest);
             break;
-        case NdisRequestOpen:
-        case NdisRequestClose:
-        case NdisRequestSend:
-        case NdisRequestTransferData:
-        case NdisRequestReset:
-        case NdisRequestGeneric1:
-        case NdisRequestGeneric2:
-        case NdisRequestGeneric3:
-        case NdisRequestGeneric4:
-        case NdisRequestMethod:
+
         default:
             NdisStatus = NDIS_STATUS_NOT_SUPPORTED;
             break;
@@ -348,12 +339,27 @@ MiniportRegister(
 
     NdisZeroMemory(&MiniportDriverCharacteristics, sizeof (MiniportDriverCharacteristics));
 
-    MiniportDriverCharacteristics.Header.Type = NDIS_OBJECT_TYPE_MINIPORT_DRIVER_CHARACTERISTICS,
+    MiniportDriverCharacteristics.Header.Type = NDIS_OBJECT_TYPE_MINIPORT_DRIVER_CHARACTERISTICS;
     MiniportDriverCharacteristics.Header.Size = NDIS_SIZEOF_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_2;
     MiniportDriverCharacteristics.Header.Revision = NDIS_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_2;
 
-    MiniportDriverCharacteristics.MajorNdisVersion = NDIS_MINIPORT_MAJOR_VERSION;
-    MiniportDriverCharacteristics.MinorNdisVersion = NDIS_MINIPORT_MINOR_VERSION;
+#ifdef NDIS_RUNTIME_VERSION_685
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_685) {
+        MiniportDriverCharacteristics.Header.Size = NDIS_SIZEOF_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_3;
+        MiniportDriverCharacteristics.Header.Revision = NDIS_MINIPORT_DRIVER_CHARACTERISTICS_REVISION_3;
+
+        MiniportDriverCharacteristics.MajorNdisVersion = NDIS_MINIPORT_MAJOR_VERSION; // 6
+        MiniportDriverCharacteristics.MinorNdisVersion = NDIS_MINIPORT_MINOR_VERSION; // 85
+    } else
+#endif
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660) {
+        MiniportDriverCharacteristics.MajorNdisVersion = 6;
+        MiniportDriverCharacteristics.MinorNdisVersion = 60;
+    } else {
+        MiniportDriverCharacteristics.MajorNdisVersion = NDIS_MINIPORT_MINIMUM_MAJOR_VERSION; // 6
+        MiniportDriverCharacteristics.MinorNdisVersion = NDIS_MINIPORT_MINIMUM_MINOR_VERSION; // 30
+    }
+
     MiniportDriverCharacteristics.MajorDriverVersion = MAJOR_VERSION;
     MiniportDriverCharacteristics.MinorDriverVersion = MINOR_VERSION;
     MiniportDriverCharacteristics.Flags = NDIS_WDM_DRIVER;

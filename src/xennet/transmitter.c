@@ -1,4 +1,5 @@
-/* Copyright (c) Citrix Systems Inc.
+/* Copyright (c) Xen Project.
+ * Copyright (c) Cloud Software Group, Inc.
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, 
@@ -54,7 +55,7 @@ TransmitterInitialize (
 {
     NTSTATUS                status;
 
-    *Transmitter = ALLOCATE_POOL(NonPagedPool,
+    *Transmitter = __AllocatePoolWithTag(NonPagedPool,
                                          sizeof(XENNET_TRANSMITTER),
                                          TRANSMITTER_POOL_TAG);
 
@@ -86,7 +87,7 @@ TransmitterTeardown(
 
     RtlZeroMemory(&Transmitter->Lock, sizeof(KSPIN_LOCK));
 
-    ExFreePoolWithTag(Transmitter, TRANSMITTER_POOL_TAG);
+    __FreePoolWithTag(Transmitter, TRANSMITTER_POOL_TAG);
 }
 
 typedef struct _NET_BUFFER_LIST_RESERVED {
@@ -324,20 +325,22 @@ __TransmitterSendNetBufferList(
 
         __TransmitterGetNetBufferList(Transmitter, NetBufferList);
 
-        /*  Added this assertion here because the compiler think (C28182) that NetBuffer could be NULL at this point */
-        ASSERT(NetBuffer != NULL);
-
-        status = XENVIF_VIF(TransmitterQueuePacket,
-                            AdapterGetVifInterface(Transmitter->Adapter),
-                            NET_BUFFER_CURRENT_MDL(NetBuffer),
-                            NET_BUFFER_CURRENT_MDL_OFFSET(NetBuffer),
-                            NET_BUFFER_DATA_LENGTH(NetBuffer),
-                            OffloadOptions,
-                            MaximumSegmentSize,
-                            TagControlInformation,
-                            &Hash,
-                            (NetBufferListNext != NULL) ? TRUE : FALSE,
-                            Cookie);
+        if (NET_BUFFER_CURRENT_MDL(NetBuffer) != NULL) {
+            ASSERT(NetBuffer != NULL);
+            status = XENVIF_VIF(TransmitterQueuePacket,
+                                AdapterGetVifInterface(Transmitter->Adapter),
+                                NET_BUFFER_CURRENT_MDL(NetBuffer),
+                                NET_BUFFER_CURRENT_MDL_OFFSET(NetBuffer),
+                                NET_BUFFER_DATA_LENGTH(NetBuffer),
+                                OffloadOptions,
+                                MaximumSegmentSize,
+                                TagControlInformation,
+                                &Hash,
+                                (NetBufferListNext != NULL) ? TRUE : FALSE,
+                                Cookie);
+        }
+        else
+            status = STATUS_INVALID_PARAMETER;
         if (!NT_SUCCESS(status)) {
             __TransmitterReturnPacket(Transmitter, Cookie,
                                       NDIS_STATUS_NOT_ACCEPTED);

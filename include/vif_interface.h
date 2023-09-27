@@ -1,4 +1,5 @@
-/* Copyright (c) Citrix Systems Inc.
+/* Copyright (c) Xen Project.
+ * Copyright (c) Cloud Software Group, Inc.
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, 
@@ -68,13 +69,6 @@ typedef enum _XENVIF_PACKET_HASH_TYPE {
     XENVIF_PACKET_HASH_TYPE_IPV6_TCP
 } XENVIF_PACKET_HASH_TYPE, *PXENVIF_PACKET_HASH_TYPE;
 
-struct _XENVIF_PACKET_HASH_V1 {
-    /*! Hash algorithm used to calculate value */
-    XENVIF_PACKET_HASH_ALGORITHM    Algorithm;
-    /*! Calculated value */
-    ULONG                           Value;
-};
-
 /*! \struct _XENVIF_PACKET_HASH_V2
     \brief Hash information
 */
@@ -97,19 +91,6 @@ struct  _XENVIF_PACKET_HEADER_V1 {
     ULONG   Offset;
     /*! Length of header (0 indicates a header is not present) */
     ULONG   Length;
-};
-
-struct _XENVIF_PACKET_INFO_V1 {
-    ULONG                           Length;
-    USHORT                          TagControlInformation;
-    BOOLEAN                         IsAFragment;
-    struct _XENVIF_PACKET_HEADER_V1 EthernetHeader;
-    struct _XENVIF_PACKET_HEADER_V1 LLCSnapHeader;
-    struct _XENVIF_PACKET_HEADER_V1 IpHeader;
-    struct _XENVIF_PACKET_HEADER_V1 IpOptions;
-    struct _XENVIF_PACKET_HEADER_V1 TcpHeader;
-    struct _XENVIF_PACKET_HEADER_V1 TcpOptions;
-    struct _XENVIF_PACKET_HEADER_V1 UdpHeader;
 };
 
 /*! \struct _XENVIF_PACKET_INFO_V2
@@ -152,20 +133,20 @@ struct _XENVIF_PACKET_CHECKSUM_FLAGS_V1 {
             ULONG   IpChecksumSucceeded:1;
             /*! IPv4 header checksum validation failed */
             ULONG   IpChecksumFailed:1;
-            /*! IPv4 header checksum is present */
-            ULONG   IpChecksumPresent:1;
+            /*! IPv4 header checksum not validated */
+            ULONG   IpChecksumNotValidated:1;
             /*! TCP checksum validation succeeded */
             ULONG   TcpChecksumSucceeded:1;
             /*! TCP checksum validation failed */
             ULONG   TcpChecksumFailed:1;
-            /*! TCP checksum is present */
-            ULONG   TcpChecksumPresent:1;
+            /*! TCP checksum not validated */
+            ULONG   TcpChecksumNotValidated:1;
             /*! UDP checksum validation succeeded */
             ULONG   UdpChecksumSucceeded:1;
             /*! UDP checksum validation failed */
             ULONG   UdpChecksumFailed:1;
-            /*! UDP checksum is present */
-            ULONG   UdpChecksumPresent:1;
+            /*! UDP checksum not validated */
+            ULONG   UdpChecksumNotValidated:1;
             ULONG   Reserved:23;
         };
         /*! Raw representation */
@@ -174,24 +155,6 @@ struct _XENVIF_PACKET_CHECKSUM_FLAGS_V1 {
 };
 
 typedef struct _XENVIF_PACKET_CHECKSUM_FLAGS_V1 XENVIF_PACKET_CHECKSUM_FLAGS, *PXENVIF_PACKET_CHECKSUM_FLAGS;
-
-#pragma warning(pop)
-
-struct _XENVIF_RECEIVER_PACKET_V1 {
-    LIST_ENTRY                              ListEntry;
-    struct _XENVIF_PACKET_INFO_V1           *Info;
-    ULONG                                   Offset;
-    ULONG                                   Length;
-    struct _XENVIF_PACKET_CHECKSUM_FLAGS_V1 Flags;
-    USHORT                                  MaximumSegmentSize;
-    PVOID                                   Cookie;
-    MDL                                     Mdl;
-    PFN_NUMBER                              __Pfn;
-};
-
-#pragma warning(push)
-#pragma warning(disable:4214)   // nonstandard extension used : bit field types other than int
-#pragma warning(disable:4201)   // nonstandard extension used : nameless struct/union
 
 /*! \struct _XENVIF_VIF_OFFLOAD_OPTIONS_V1
     \brief Offload options
@@ -288,6 +251,10 @@ struct _XENVIF_TRANSMITTER_PACKET_V2 {
     \brief Interface statistics
 */
 typedef enum _XENVIF_VIF_STATISTIC {
+    /*
+     * Statistics required by XENNET
+     */
+
     /*! RFC 2863 ifOutDiscards */
     XENVIF_TRANSMITTER_PACKETS_DROPPED = 0,
     /*! Backend component of RFC 2863 ifOutErrors */
@@ -324,6 +291,77 @@ typedef enum _XENVIF_VIF_STATISTIC {
     XENVIF_RECEIVER_BROADCAST_PACKETS,
     /*! Total number of octets in ifInBroadcastPkts */
     XENVIF_RECEIVER_BROADCAST_OCTETS,
+
+    /*
+     * Miscellaneous statistics
+     */
+
+    /*! Total number of outbound VLAN tagged packets */
+    XENVIF_TRANSMITTER_TAGGED_PACKETS,
+    /*! Total number of outbound LLC/SNAP packets */
+    XENVIF_TRANSMITTER_LLC_SNAP_PACKETS,
+    /*! Total number of outbound IP version 4 packets */
+    XENVIF_TRANSMITTER_IPV4_PACKETS,
+    /*! Total number of outbound IP version 6 packets */
+    XENVIF_TRANSMITTER_IPV6_PACKETS,
+    /*! Total number of outbound TCP packets */
+    XENVIF_TRANSMITTER_TCP_PACKETS,
+    /*! Total number of outbound UDP packets */
+    XENVIF_TRANSMITTER_UDP_PACKETS,
+    /*! Total number of outbound GSO packets */
+    XENVIF_TRANSMITTER_GSO_PACKETS,
+    /*! Total number of outbound IP version 4 packets with good checksum */
+    XENVIF_TRANSMITTER_IPV4_CHECKSUM_SUCCEEDED,
+    /*! Total number of outbound IP version 4 packets with bad checksum */
+    XENVIF_TRANSMITTER_IPV4_CHECKSUM_FAILED,
+    /*! Total number of outbound IP version 4 packets without validated checksum */
+    XENVIF_TRANSMITTER_IPV4_CHECKSUM_NOT_VALIDATED,
+    /*! Total number of outbound TCP packets with good checksum */
+    XENVIF_TRANSMITTER_TCP_CHECKSUM_SUCCEEDED,
+    /*! Total number of outbound TCP packets with bad checksum */
+    XENVIF_TRANSMITTER_TCP_CHECKSUM_FAILED,
+    /*! Total number of outbound TCP packets without validated checksum */
+    XENVIF_TRANSMITTER_TCP_CHECKSUM_NOT_VALIDATED,
+    /*! Total number of outbound UDP packets with good checksum */
+    XENVIF_TRANSMITTER_UDP_CHECKSUM_SUCCEEDED,
+    /*! Total number of outbound UDP packets with bad checksum */
+    XENVIF_TRANSMITTER_UDP_CHECKSUM_FAILED,
+    /*! Total number of outbound UDP packets without validated checksum */
+    XENVIF_TRANSMITTER_UDP_CHECKSUM_NOT_VALIDATED,
+
+
+    /*! Total number of inbound VLAN tagged packets */
+    XENVIF_RECEIVER_TAGGED_PACKETS,
+    /*! Total number of inbound LLC/SNAP packets */
+    XENVIF_RECEIVER_LLC_SNAP_PACKETS,
+    /*! Total number of inbound IP version 4 packets */
+    XENVIF_RECEIVER_IPV4_PACKETS,
+    /*! Total number of inbound IP version 6 packets */
+    XENVIF_RECEIVER_IPV6_PACKETS,
+    /*! Total number of inbound TCP packets */
+    XENVIF_RECEIVER_TCP_PACKETS,
+    /*! Total number of inbound UDP packets */
+    XENVIF_RECEIVER_UDP_PACKETS,
+    /*! Total number of inbound GSO packets */
+    XENVIF_RECEIVER_GSO_PACKETS,
+    /*! Total number of inbound IP version 4 packets with good checksum */
+    XENVIF_RECEIVER_IPV4_CHECKSUM_SUCCEEDED,
+    /*! Total number of inbound IP version 4 packets with bad checksum */
+    XENVIF_RECEIVER_IPV4_CHECKSUM_FAILED,
+    /*! Total number of inbound IP version 4 packets without validated checksum */
+    XENVIF_RECEIVER_IPV4_CHECKSUM_NOT_VALIDATED,
+    /*! Total number of inbound TCP packets with good checksum */
+    XENVIF_RECEIVER_TCP_CHECKSUM_SUCCEEDED,
+    /*! Total number of inbound TCP packets with bad checksum */
+    XENVIF_RECEIVER_TCP_CHECKSUM_FAILED,
+    /*! Total number of inbound TCP packets without validated checksum */
+    XENVIF_RECEIVER_TCP_CHECKSUM_NOT_VALIDATED,
+    /*! Total number of inbound UDP packets with good checksum */
+    XENVIF_RECEIVER_UDP_CHECKSUM_SUCCEEDED,
+    /*! Total number of inbound UDP packets with bad checksum */
+    XENVIF_RECEIVER_UDP_CHECKSUM_FAILED,
+    /*! Total number of inbound UDP packets without validated checksum */
+    XENVIF_RECEIVER_UDP_CHECKSUM_NOT_VALIDATED,
     XENVIF_VIF_STATISTIC_COUNT
 } XENVIF_VIF_STATISTIC, *PXENVIF_VIF_STATISTIC;
 
@@ -351,6 +389,71 @@ typedef enum _XENVIF_VIF_CALLBACK_TYPE {
     XENVIF_MAC_STATE_CHANGE
 } XENVIF_VIF_CALLBACK_TYPE, *PXENVIF_VIF_CALLBACK_TYPE;
 
+union _XENVIF_VIF_CALLBACK_PARAMETERS_V9 {
+    struct {
+        PVOID                                       Cookie;
+        PXENVIF_TRANSMITTER_PACKET_COMPLETION_INFO  Completion;
+    } TransmitterReturnPacket;
+    struct {
+        ULONG                           Index;
+        PMDL                            Mdl;
+        ULONG                           Offset;
+        ULONG                           Length;
+        XENVIF_PACKET_CHECKSUM_FLAGS    Flags;
+        USHORT                          MaximumSegmentSize;
+        USHORT                          TagControlInformation;
+        PXENVIF_PACKET_INFO             Info;
+        PXENVIF_PACKET_HASH             Hash;
+        BOOLEAN                         More;
+        PVOID                           Cookie;
+    } ReceiverQueuePacket;
+};
+
+/*! \typedef XENVIF_VIF_CALLBACK_PARAMETERS_V10
+    \brief VIF interface version 9 parameters for provider to subscriber callback function
+
+    \b XENVIF_TRANSMITTER_RETURN_PACKET:
+    \param Cookie Cookie supplied to XENVIF_TRANSMITTER_QUEUE_PACKET
+    \param Completion Packet completion information
+
+    \b XENVIF_RECEIVER_QUEUE_PACKET:
+    \param Index The index of the queue on which the packet was received
+    \param Mdl The initial MDL of the packet
+    \param Offset The offset of the packet data in the initial MDL
+    \param Length The total length of the packet
+    \param Flags Packet checksum flags
+    \param MaximumSegmentSize The TCP MSS (used only if OffloadOptions.OffloadIpVersion[4|6]LargePacket is set)
+    \param TagControlInformation The VLAN TCI (used only if OffloadOptions.OffloadTagManipulation is set)
+    \param Info Header information for the packet
+    \param Hash Hash information for the packet
+    \param More A flag to indicate whether more packets will be queued for the same CPU
+    \param Cookie Cookie that should be passed to XENVIF_RECEIVER_RETURN_PACKET method
+    \param Pause A flag to request that no more packets be queued for a short period of time
+
+    \b XENVIF_MAC_STATE_CHANGE:
+    No additional arguments
+*/
+union _XENVIF_VIF_CALLBACK_PARAMETERS_V10 {
+    struct {
+        PVOID                                       Cookie;
+        PXENVIF_TRANSMITTER_PACKET_COMPLETION_INFO  Completion;
+    } TransmitterReturnPacket;
+    struct {
+        ULONG                           Index;
+        PMDL                            Mdl;
+        ULONG                           Offset;
+        ULONG                           Length;
+        XENVIF_PACKET_CHECKSUM_FLAGS    Flags;
+        USHORT                          MaximumSegmentSize;
+        USHORT                          TagControlInformation;
+        PXENVIF_PACKET_INFO             Info;
+        PXENVIF_PACKET_HASH             Hash;
+        BOOLEAN                         More;
+        PVOID                           Cookie;
+        BOOLEAN                         Pause;
+    } ReceiverQueuePacket;
+};
+
 /*! \typedef XENVIF_VIF_ACQUIRE
     \brief Acquire a reference to the VIF interface
 
@@ -371,38 +474,48 @@ typedef VOID
     IN  PINTERFACE  Interface
     );
 
+typedef VOID
+(*XENVIF_VIF_CALLBACK_V8)(
+    IN  PVOID                       Argument OPTIONAL,
+    IN  XENVIF_VIF_CALLBACK_TYPE    Type,
+    ...
+    );
+
+typedef VOID
+(*XENVIF_VIF_CALLBACK_V9)(
+    IN  PVOID                                       Argument OPTIONAL,
+    IN  XENVIF_VIF_CALLBACK_TYPE                    Type,
+    IN  union _XENVIF_VIF_CALLBACK_PARAMETERS_V9   *Parameters
+    );
+
+typedef union _XENVIF_VIF_CALLBACK_PARAMETERS_V10 XENVIF_VIF_CALLBACK_PARAMETERS, *PXENVIF_VIF_CALLBACK_PARAMETERS;
+
 /*! \typedef XENVIF_VIF_CALLBACK
     \brief Provider to subscriber callback function
 
     \param Argument An optional context argument passed to the callback
     \param Type The callback type
-    \param ... Additional paramaters required by \a Type
-
-    \b XENVIF_TRANSMITTER_RETURN_PACKET:
-    \param Cookie Cookie supplied to XENVIF_TRANSMITTER_QUEUE_PACKET
-    \param Completion Packet completion information
-
-    \b XENVIF_RECEIVER_QUEUE_PACKET:
-    \param Index The index of the queue on which the packet was received
-    \param Mdl The initial MDL of the packet
-    \param Offset The offset of the packet data in the initial MDL
-    \param Length The total length of the packet
-    \param Flags Packet checksum flags
-    \param MaximumSegmentSize The TCP MSS (used only if OffloadOptions.OffloadIpVersion[4|6]LargePacket is set)
-    \param TagControlInformation The VLAN TCI (used only if OffloadOptions.OffloadTagManipulation is set)
-    \param Info Header information for the packet
-    \param Hash Hash information for the packet
-    \param More A flag to indicate whether more packets will be queued for the same CPU
-    \param Cookie Cookie that should be passed to XENVIF_RECEIVER_RETURN_PACKET method
-
-    \b XENVIF_MAC_STATE_CHANGE:
-    No additional arguments
+    \param Parameters The callback parameters
 */
 typedef VOID
 (*XENVIF_VIF_CALLBACK)(
-    IN  PVOID                       Argument OPTIONAL,
-    IN  XENVIF_VIF_CALLBACK_TYPE    Type,
-    ...
+    IN  PVOID                           Argument OPTIONAL,
+    IN  XENVIF_VIF_CALLBACK_TYPE        Type,
+    IN  PXENVIF_VIF_CALLBACK_PARAMETERS Parameters
+    );
+
+typedef NTSTATUS
+(*XENVIF_VIF_ENABLE_V8)(
+    IN  PINTERFACE              Interface,
+    IN  XENVIF_VIF_CALLBACK_V8  Callback,
+    IN  PVOID                   Argument OPTIONAL
+    );
+
+typedef NTSTATUS
+(*XENVIF_VIF_ENABLE_V9)(
+    IN  PINTERFACE              Interface,
+    IN  XENVIF_VIF_CALLBACK_V9  Callback,
+    IN  PVOID                   Argument OPTIONAL
     );
 
 /*! \typedef XENVIF_VIF_ENABLE
@@ -483,12 +596,6 @@ typedef NTSTATUS
     IN  ULONG               Size
     );
 
-typedef VOID
-(*XENVIF_VIF_RECEIVER_RETURN_PACKETS_V1)(
-    IN  PINTERFACE  Interface,
-    IN  PLIST_ENTRY List
-    );
-
 /*! \typedef XENVIF_VIF_RECEIVER_RETURN_PACKET
     \brief Return packets queued for receive by \ref XENVIF_VIF_CALLBACK
     (Type = \ref XENVIF_RECEIVER_QUEUE_PACKET)
@@ -500,46 +607,6 @@ typedef VOID
 (*XENVIF_VIF_RECEIVER_RETURN_PACKET)(
     IN  PINTERFACE  Interface,
     IN  PVOID       Cookie
-    );
-
-typedef NTSTATUS
-(*XENVIF_VIF_TRANSMITTER_GET_PACKET_HEADERS_V2)(
-    IN  PINTERFACE                              Interface,
-    IN  struct _XENVIF_TRANSMITTER_PACKET_V2    *Packet,
-    OUT PVOID                                   Headers,
-    OUT PXENVIF_PACKET_INFO                     Info
-    );
-
-typedef NTSTATUS
-(*XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS_V2)(
-    IN  PINTERFACE  Interface,
-    IN  PLIST_ENTRY List
-    );
-
-typedef VOID
-(*XENVIF_VIF_TRANSMITTER_QUEUE_PACKET_V4)(
-    IN  PINTERFACE                  Interface,
-    IN  PMDL                        Mdl,
-    IN  ULONG                       Offset,
-    IN  ULONG                       Length,
-    IN  XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions,
-    IN  USHORT                      MaximumSegmentSize,
-    IN  USHORT                      TagControlInformation,
-    IN  PXENVIF_PACKET_HASH         Hash,
-    IN  PVOID                       Cookie
-    );
-
-typedef NTSTATUS
-(*XENVIF_VIF_TRANSMITTER_QUEUE_PACKET_V5)(
-    IN  PINTERFACE                  Interface,
-    IN  PMDL                        Mdl,
-    IN  ULONG                       Offset,
-    IN  ULONG                       Length,
-    IN  XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions,
-    IN  USHORT                      MaximumSegmentSize,
-    IN  USHORT                      TagControlInformation,
-    IN  PXENVIF_PACKET_HASH         Hash,
-    IN  PVOID                       Cookie
     );
 
 /*! \typedef XENVIF_VIF_TRANSMITTER_QUEUE_PACKET
@@ -822,191 +889,6 @@ typedef NTSTATUS
 DEFINE_GUID(GUID_XENVIF_VIF_INTERFACE, 
 0x76f279cd, 0xca11, 0x418b, 0x92, 0xe8, 0xc5, 0x7f, 0x77, 0xde, 0xe, 0x2e);
 
-/*! \struct _XENVIF_VIF_INTERFACE_V2
-    \brief VIF interface version 2
-    \ingroup interfaces
-*/
-struct _XENVIF_VIF_INTERFACE_V2 {
-    INTERFACE                                       Interface;
-    XENVIF_VIF_ACQUIRE                              Acquire;
-    XENVIF_VIF_RELEASE                              Release;
-    XENVIF_VIF_ENABLE                               Enable;
-    XENVIF_VIF_DISABLE                              Disable;
-    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
-    XENVIF_VIF_RECEIVER_RETURN_PACKETS_V1           ReceiverReturnPacketsVersion1;
-    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
-    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
-    XENVIF_VIF_TRANSMITTER_GET_PACKET_HEADERS_V2    TransmitterGetPacketHeadersVersion2;
-    XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS_V2         TransmitterQueuePacketsVersion2;
-    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
-    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
-    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
-    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
-    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
-    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
-    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
-    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
-    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
-    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
-    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
-};
-
-/*! \struct _XENVIF_VIF_INTERFACE_V3
-    \brief VIF interface version 3
-    \ingroup interfaces
-*/
-struct _XENVIF_VIF_INTERFACE_V3 {
-    INTERFACE                                       Interface;
-    XENVIF_VIF_ACQUIRE                              Acquire;
-    XENVIF_VIF_RELEASE                              Release;
-    XENVIF_VIF_ENABLE                               Enable;
-    XENVIF_VIF_DISABLE                              Disable;
-    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
-    XENVIF_VIF_RECEIVER_RETURN_PACKETS_V1           ReceiverReturnPacketsVersion1;
-    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
-    XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE           ReceiverSetBackfillSize;
-    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
-    XENVIF_VIF_TRANSMITTER_GET_PACKET_HEADERS_V2    TransmitterGetPacketHeadersVersion2;
-    XENVIF_VIF_TRANSMITTER_QUEUE_PACKETS_V2         TransmitterQueuePacketsVersion2;
-    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
-    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
-    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
-    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
-    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
-    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
-    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
-    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
-    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
-    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
-    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
-};
-
-/*! \struct _XENVIF_VIF_INTERFACE_V4
-    \brief VIF interface version 4
-    \ingroup interfaces
-*/
-struct _XENVIF_VIF_INTERFACE_V4 {
-    INTERFACE                                       Interface;
-    XENVIF_VIF_ACQUIRE                              Acquire;
-    XENVIF_VIF_RELEASE                              Release;
-    XENVIF_VIF_ENABLE                               Enable;
-    XENVIF_VIF_DISABLE                              Disable;
-    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
-    XENVIF_VIF_RECEIVER_RETURN_PACKET               ReceiverReturnPacket;
-    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
-    XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE           ReceiverSetBackfillSize;
-    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
-    XENVIF_VIF_TRANSMITTER_QUEUE_PACKET_V4          TransmitterQueuePacketVersion4;
-    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
-    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
-    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
-    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
-    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
-    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
-    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
-    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
-    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
-    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
-    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
-};
-
-/*! \struct _XENVIF_VIF_INTERFACE_V5
-    \brief VIF interface version 5
-    \ingroup interfaces
-*/
-struct _XENVIF_VIF_INTERFACE_V5 {
-    INTERFACE                                       Interface;
-    XENVIF_VIF_ACQUIRE                              Acquire;
-    XENVIF_VIF_RELEASE                              Release;
-    XENVIF_VIF_ENABLE                               Enable;
-    XENVIF_VIF_DISABLE                              Disable;
-    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
-    XENVIF_VIF_RECEIVER_RETURN_PACKET               ReceiverReturnPacket;
-    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
-    XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE           ReceiverSetBackfillSize;
-    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
-    XENVIF_VIF_TRANSMITTER_QUEUE_PACKET_V5          TransmitterQueuePacket;
-    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
-    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
-    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
-    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
-    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
-    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
-    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
-    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
-    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
-    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
-    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
-};
-
-/*! \struct _XENVIF_VIF_INTERFACE_V6
-    \brief VIF interface version 6
-    \ingroup interfaces
-*/
-struct _XENVIF_VIF_INTERFACE_V6 {
-    INTERFACE                                       Interface;
-    XENVIF_VIF_ACQUIRE                              Acquire;
-    XENVIF_VIF_RELEASE                              Release;
-    XENVIF_VIF_ENABLE                               Enable;
-    XENVIF_VIF_DISABLE                              Disable;
-    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
-    XENVIF_VIF_QUERY_RING_COUNT                     QueryRingCount;
-    XENVIF_VIF_UPDATE_HASH_MAPPING                  UpdateHashMapping;
-    XENVIF_VIF_RECEIVER_RETURN_PACKET               ReceiverReturnPacket;
-    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
-    XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE           ReceiverSetBackfillSize;
-    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
-    XENVIF_VIF_RECEIVER_SET_HASH_ALGORITHM          ReceiverSetHashAlgorithm;
-    XENVIF_VIF_RECEIVER_QUERY_HASH_CAPABILITIES     ReceiverQueryHashCapabilities;
-    XENVIF_VIF_RECEIVER_UPDATE_HASH_PARAMETERS      ReceiverUpdateHashParameters;
-    XENVIF_VIF_TRANSMITTER_QUEUE_PACKET_V5          TransmitterQueuePacket;
-    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
-    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
-    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
-    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
-    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
-    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
-    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
-    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
-    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
-    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
-    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
-};
-
-/*! \struct _XENVIF_VIF_INTERFACE_V7
-    \brief VIF interface version 7
-    \ingroup interfaces
-*/
-struct _XENVIF_VIF_INTERFACE_V7 {
-    INTERFACE                                       Interface;
-    XENVIF_VIF_ACQUIRE                              Acquire;
-    XENVIF_VIF_RELEASE                              Release;
-    XENVIF_VIF_ENABLE                               Enable;
-    XENVIF_VIF_DISABLE                              Disable;
-    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
-    XENVIF_VIF_QUERY_RING_COUNT                     QueryRingCount;
-    XENVIF_VIF_UPDATE_HASH_MAPPING                  UpdateHashMapping;
-    XENVIF_VIF_RECEIVER_RETURN_PACKET               ReceiverReturnPacket;
-    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
-    XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE           ReceiverSetBackfillSize;
-    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
-    XENVIF_VIF_RECEIVER_SET_HASH_ALGORITHM          ReceiverSetHashAlgorithm;
-    XENVIF_VIF_RECEIVER_QUERY_HASH_CAPABILITIES     ReceiverQueryHashCapabilities;
-    XENVIF_VIF_RECEIVER_UPDATE_HASH_PARAMETERS      ReceiverUpdateHashParameters;
-    XENVIF_VIF_TRANSMITTER_QUEUE_PACKET             TransmitterQueuePacket;
-    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
-    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
-    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
-    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
-    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
-    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
-    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
-    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
-    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
-    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
-    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
-};
-
 /*! \struct _XENVIF_VIF_INTERFACE_V8
     \brief VIF interface version 8
     \ingroup interfaces
@@ -1015,6 +897,74 @@ struct _XENVIF_VIF_INTERFACE_V8 {
     INTERFACE                                       Interface;
     XENVIF_VIF_ACQUIRE                              Acquire;
     XENVIF_VIF_RELEASE                              Release;
+    XENVIF_VIF_ENABLE_V8                            EnableVersion8;
+    XENVIF_VIF_DISABLE                              Disable;
+    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
+    XENVIF_VIF_QUERY_RING_COUNT                     QueryRingCount;
+    XENVIF_VIF_UPDATE_HASH_MAPPING                  UpdateHashMapping;
+    XENVIF_VIF_RECEIVER_RETURN_PACKET               ReceiverReturnPacket;
+    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
+    XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE           ReceiverSetBackfillSize;
+    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
+    XENVIF_VIF_RECEIVER_SET_HASH_ALGORITHM          ReceiverSetHashAlgorithm;
+    XENVIF_VIF_RECEIVER_QUERY_HASH_CAPABILITIES     ReceiverQueryHashCapabilities;
+    XENVIF_VIF_RECEIVER_UPDATE_HASH_PARAMETERS      ReceiverUpdateHashParameters;
+    XENVIF_VIF_TRANSMITTER_QUEUE_PACKET             TransmitterQueuePacket;
+    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
+    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
+    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
+    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
+    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
+    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
+    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
+    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
+    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
+    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
+    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
+};
+
+/*! \struct _XENVIF_VIF_INTERFACE_V9
+    \brief VIF interface version 9
+    \ingroup interfaces
+*/
+struct _XENVIF_VIF_INTERFACE_V9 {
+    INTERFACE                                       Interface;
+    XENVIF_VIF_ACQUIRE                              Acquire;
+    XENVIF_VIF_RELEASE                              Release;
+    XENVIF_VIF_ENABLE_V9                            EnableVersion9;
+    XENVIF_VIF_DISABLE                              Disable;
+    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
+    XENVIF_VIF_QUERY_RING_COUNT                     QueryRingCount;
+    XENVIF_VIF_UPDATE_HASH_MAPPING                  UpdateHashMapping;
+    XENVIF_VIF_RECEIVER_RETURN_PACKET               ReceiverReturnPacket;
+    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
+    XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE           ReceiverSetBackfillSize;
+    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
+    XENVIF_VIF_RECEIVER_SET_HASH_ALGORITHM          ReceiverSetHashAlgorithm;
+    XENVIF_VIF_RECEIVER_QUERY_HASH_CAPABILITIES     ReceiverQueryHashCapabilities;
+    XENVIF_VIF_RECEIVER_UPDATE_HASH_PARAMETERS      ReceiverUpdateHashParameters;
+    XENVIF_VIF_TRANSMITTER_QUEUE_PACKET             TransmitterQueuePacket;
+    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
+    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
+    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
+    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
+    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
+    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
+    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
+    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
+    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
+    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
+    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
+};
+
+/*! \struct _XENVIF_VIF_INTERFACE_V10
+    \brief VIF interface version 10
+    \ingroup interfaces
+*/
+struct _XENVIF_VIF_INTERFACE_V10 {
+    INTERFACE                                       Interface;
+    XENVIF_VIF_ACQUIRE                              Acquire;
+    XENVIF_VIF_RELEASE                              Release;
     XENVIF_VIF_ENABLE                               Enable;
     XENVIF_VIF_DISABLE                              Disable;
     XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
@@ -1041,7 +991,7 @@ struct _XENVIF_VIF_INTERFACE_V8 {
     XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
 };
 
-typedef struct _XENVIF_VIF_INTERFACE_V8 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTERFACE;
+typedef struct _XENVIF_VIF_INTERFACE_V10 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTERFACE;
 
 /*! \def XENVIF_VIF
     \brief Macro at assist in method invocation
@@ -1051,7 +1001,7 @@ typedef struct _XENVIF_VIF_INTERFACE_V8 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTER
 
 #endif  // _WINDLL
 
-#define XENVIF_VIF_INTERFACE_VERSION_MIN    2
-#define XENVIF_VIF_INTERFACE_VERSION_MAX    8
+#define XENVIF_VIF_INTERFACE_VERSION_MIN    8
+#define XENVIF_VIF_INTERFACE_VERSION_MAX    10
 
 #endif  // _XENVIF_INTERFACE_H

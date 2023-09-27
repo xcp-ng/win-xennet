@@ -1,4 +1,5 @@
-; Copyright (c) Citrix Systems Inc.
+; Copyright (c) Xen Project.
+; Copyright (c) Cloud Software Group, Inc.
 ; All rights reserved.
 ;
 ; Redistribution and use in source and binary forms, 
@@ -61,16 +62,16 @@ xennet_coinst_@MAJOR_VERSION@_@MINOR_VERSION@_@MICRO_VERSION@_@BUILD_NUMBER@.dll
 ; DisplayName		Section		DeviceID
 ; -----------		-------		--------
 
-%XenNetName%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@@VENDOR_DEVICE_ID@&DEV_NET&REV_09000000
-%XenNetName%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@0001&DEV_NET&REV_09000000
-%XenNetName%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@0002&DEV_NET&REV_09000000
+%XenNetName%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@@VENDOR_DEVICE_ID@&DEV_NET&REV_09000003
+%XenNetName%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@0001&DEV_NET&REV_09000003
+%XenNetName%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@0002&DEV_NET&REV_09000003
 
 [XenNet_Inst] 
 Characteristics=0x84
 BusType=1
 *IfType=6             	; IF_TYPE_ETHERNET_CSMACD
 *MediaType=0          	; NdisMedium802_3
-*PhysicalMediaType=0	; NdisPhysicalMediumUnspecified
+*PhysicalMediaType=14	; NdisPhysicalMedium802_3
 CopyFiles=XenNet_Copyfiles
 AddReg=Xennet_Inst_AddReg
 
@@ -166,6 +167,12 @@ HKR, Ndi\params\*RSS,                             Optional,   0, "0"
 HKR, Ndi\params\*RSS\enum,                        "0",        0, %Disabled%
 HKR, Ndi\params\*RSS\enum,                        "1",        0, %Enabled%
 
+HKR, Ndi\params\*NumRSSQueues,                    ParamDesc,  0, %NumRSSQueues%
+HKR, Ndi\params\*NumRSSQueues,                    Type,       0, "int"
+HKR, Ndi\params\*NumRSSQueues,                    Default,    0, "8"
+HKR, Ndi\params\*NumRSSQueues,                    Min,        0, "1"
+HKR, Ndi\params\*NumRSSQueues,                    Max,        0, "8"
+
 [XenNet_Inst.Services] 
 AddService=xennet,0x02,XenNet_Service,XenNet_EventLog
 
@@ -211,6 +218,7 @@ LSOV2IPv6="Large Send Offload V2 (IPv6)"
 LROIPv4="Large Receive Offload (IPv4)"
 LROIPv6="Large Receive Offload (IPv6)"
 RSS="Receive Side Scaling"
+NumRSSQueues="Maximum Number of RSS Queues"
 HeaderDataSplit="Header Data Split"
 Disabled="Disabled"
 Enabled="Enabled"

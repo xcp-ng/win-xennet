@@ -5,19 +5,15 @@
 
 # Output
 /xennet
-*.log
-*.opendb
-*.db-shm
-*.db
-*.db-wal
-*.vsidx
-*.obj
-*.tlog
-*.pdb
-vs2019/version/.revision
+.build_number
 include/version.h
-vs2019/Windows10Release/
-vs2019/*/Windows10Release/
-vs2019/*/x64/
-vs2019/xennet.inf
-vs2019/.vs/xennet/v16/.suo
+vs20??/.vs/
+vs20??/*/Windows10Debug/
+vs20??/*/Windows10Release/
+vs20??/*/x64/
+vs20??/*/x86/
+vs20??/Windows10Debug/
+vs20??/Windows10Release/
+vs20??/version/.revision
+vs20??/version/version.log
+vs20??/*.inf

@@ -1,4 +1,5 @@
-/* Copyright (c) Citrix Systems Inc.
+/* Copyright (c) Xen Project.
+ * Copyright (c) Cloud Software Group, Inc.
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, 
@@ -61,17 +62,18 @@ typedef struct _PROPERTIES {
     int lrov4;
     int lrov6;
     int rss;
+    int numrssqueues;
 } PROPERTIES, *PPROPERTIES;
 
 typedef struct _XENNET_RSS {
-    BOOLEAN Supported;
-    BOOLEAN HashEnabled;
-    BOOLEAN ScaleEnabled;
-    ULONG   Types;
-    UCHAR   Key[NDIS_RSS_HASH_SECRET_KEY_MAX_SIZE_REVISION_1];
-    ULONG   KeySize;
-    CCHAR   Table[NDIS_RSS_INDIRECTION_TABLE_MAX_SIZE_REVISION_1];
-    ULONG   TableSize;
+    BOOLEAN             Supported;
+    BOOLEAN             HashEnabled;
+    BOOLEAN             ScaleEnabled;
+    ULONG               Types;
+    UCHAR               Key[NDIS_RSS_HASH_SECRET_KEY_MAX_SIZE_REVISION_2];
+    ULONG               KeySize;
+    PROCESSOR_NUMBER    Table[NDIS_RSS_INDIRECTION_TABLE_MAX_SIZE_REVISION_2 / sizeof(PROCESSOR_NUMBER)];
+    ULONG               TableCount;
 } XENNET_RSS, *PXENNET_RSS;
 
 struct _XENNET_ADAPTER {
@@ -88,7 +90,7 @@ struct _XENNET_ADAPTER {
 
     NDIS_HANDLE                 NdisAdapterHandle;
     NDIS_HANDLE                 NdisDmaHandle;
-    NDIS_PNP_CAPABILITIES       Capabilities;
+    NDIS_PM_CAPABILITIES        Capabilities;
     NDIS_OFFLOAD                Offload;
     PROPERTIES                  Properties;
     XENNET_RSS                  Rss;
@@ -108,6 +110,7 @@ static NDIS_OID XennetSupportedOids[] =
     OID_GEN_MEDIA_SUPPORTED,
     OID_GEN_MEDIA_IN_USE,
     OID_GEN_PHYSICAL_MEDIUM,
+    OID_GEN_PHYSICAL_MEDIUM_EX,
     OID_GEN_CURRENT_LOOKAHEAD,
     OID_GEN_MAXIMUM_LOOKAHEAD,
     OID_GEN_MAXIMUM_FRAME_SIZE,
@@ -150,7 +153,7 @@ static NDIS_OID XennetSupportedOids[] =
     OID_802_3_XMIT_MORE_COLLISIONS,
     OID_OFFLOAD_ENCAPSULATION,
     OID_TCP_OFFLOAD_PARAMETERS,
-    OID_PNP_CAPABILITIES,
+    OID_PM_CURRENT_CAPABILITIES,
     OID_PNP_QUERY_POWER,
     OID_PNP_SET_POWER,
     OID_GEN_RECEIVE_SCALE_PARAMETERS,
@@ -197,75 +200,40 @@ AdapterAllocateComplete (
 
 static VOID
 AdapterVifCallback(
-    IN  PVOID                       Context,
-    IN  XENVIF_VIF_CALLBACK_TYPE    Type,
-    ...
+    IN  PVOID                           Context,
+    IN  XENVIF_VIF_CALLBACK_TYPE        Type,
+    IN  PXENVIF_VIF_CALLBACK_PARAMETERS Parameters
     )
 {
-    PXENNET_ADAPTER     Adapter = Context;
-    va_list             Arguments;
-
-    va_start(Arguments, Type);
+    PXENNET_ADAPTER                     Adapter = Context;
 
     switch (Type) {
-    case XENVIF_TRANSMITTER_RETURN_PACKET: {
-        PVOID                                       Cookie;
-        PXENVIF_TRANSMITTER_PACKET_COMPLETION_INFO  Completion;
-
-        Cookie = va_arg(Arguments, PVOID);
-        Completion = va_arg(Arguments, PXENVIF_TRANSMITTER_PACKET_COMPLETION_INFO);
-
+    case XENVIF_TRANSMITTER_RETURN_PACKET:
         TransmitterReturnPacket(Adapter->Transmitter,
-                                Cookie,
-                                Completion);
+                                Parameters->TransmitterReturnPacket.Cookie,
+                                Parameters->TransmitterReturnPacket.Completion);
         break;
-    }
-    case XENVIF_RECEIVER_QUEUE_PACKET: {
-        ULONG                           Index;
-        PMDL                            Mdl;
-        ULONG                           Offset;
-        ULONG                           Length;
-        XENVIF_PACKET_CHECKSUM_FLAGS    Flags;
-        USHORT                          MaximumSegmentSize;
-        USHORT                          TagControlInformation;
-        PXENVIF_PACKET_INFO             Info;
-        PXENVIF_PACKET_HASH             Hash;
-        BOOLEAN                         More;
-        PVOID                           Cookie;
 
-        Index = va_arg(Arguments, ULONG);
-        Mdl = va_arg(Arguments, PMDL);
-        Offset = va_arg(Arguments, ULONG);
-        Length = va_arg(Arguments, ULONG);
-        Flags = va_arg(Arguments, XENVIF_PACKET_CHECKSUM_FLAGS);
-        MaximumSegmentSize = va_arg(Arguments, USHORT);
-        TagControlInformation = va_arg(Arguments, USHORT);
-        Info = va_arg(Arguments, PXENVIF_PACKET_INFO);
-        Hash = va_arg(Arguments, PXENVIF_PACKET_HASH);
-        More = va_arg(Arguments, BOOLEAN);
-        Cookie = va_arg(Arguments, PVOID);
-
+    case XENVIF_RECEIVER_QUEUE_PACKET:
         ReceiverQueuePacket(Adapter->Receiver,
-                            Index,
-                            Mdl,
-                            Offset,
-                            Length,
-                            Flags,
-                            MaximumSegmentSize,
-                            TagControlInformation,
-                            Info,
-                            Hash,
-                            More,
-                            Cookie);
+                            Parameters->ReceiverQueuePacket.Index,
+                            Parameters->ReceiverQueuePacket.Mdl,
+                            Parameters->ReceiverQueuePacket.Offset,
+                            Parameters->ReceiverQueuePacket.Length,
+                            Parameters->ReceiverQueuePacket.Flags,
+                            Parameters->ReceiverQueuePacket.MaximumSegmentSize,
+                            Parameters->ReceiverQueuePacket.TagControlInformation,
+                            Parameters->ReceiverQueuePacket.Info,
+                            Parameters->ReceiverQueuePacket.Hash,
+                            Parameters->ReceiverQueuePacket.More,
+                            Parameters->ReceiverQueuePacket.Cookie,
+                            &Parameters->ReceiverQueuePacket.Pause);
         break;
-    }
-    case XENVIF_MAC_STATE_CHANGE: {
+
+    case XENVIF_MAC_STATE_CHANGE:
         AdapterMediaStateChange(Adapter);
         break;
     }
-    }
-
-    va_end(Arguments);
 }
 
 static VOID
@@ -357,8 +325,20 @@ AdapterIndicateOffloadChanged(
 
     RtlZeroMemory(&Current, sizeof(Current));
     Current.Header.Type = NDIS_OBJECT_TYPE_OFFLOAD;
-    Current.Header.Revision = NDIS_OFFLOAD_REVISION_2;
-    Current.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_2;
+
+#ifdef NDIS_RUNTIME_VERSION_685
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_685) {
+        Current.Header.Revision = NDIS_OFFLOAD_REVISION_6;
+        Current.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_6;
+    } else
+#endif
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660) {
+        Current.Header.Revision = NDIS_OFFLOAD_REVISION_4;
+        Current.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_4;
+    } else {
+        Current.Header.Revision = NDIS_OFFLOAD_REVISION_3;
+        Current.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_3;
+    }
 
     Current.Checksum.IPv4Receive.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
 
@@ -444,7 +424,16 @@ AdapterIndicateOffloadChanged(
     Status.Header.Size = NDIS_SIZEOF_STATUS_INDICATION_REVISION_1;
     Status.StatusCode = NDIS_STATUS_TASK_OFFLOAD_CURRENT_CONFIG;
     Status.StatusBuffer = &Current;
-    Status.StatusBufferSize = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_2;
+
+#ifdef NDIS_RUNTIME_VERSION_685
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_685)
+        Status.StatusBufferSize = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_6;
+    else
+#endif
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660)
+        Status.StatusBufferSize = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_4;
+    else
+        Status.StatusBufferSize = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_3;
 
     NdisMIndicateStatusEx(Adapter->NdisAdapterHandle, &Status);
 }
@@ -721,14 +710,12 @@ AdapterDisableRSSHash(
 
 static NDIS_STATUS
 AdapterUpdateRSSTable(
-    IN  PXENNET_ADAPTER Adapter,
-    IN  PCCHAR          Table,
-    IN  ULONG           TableSize
+    IN  PXENNET_ADAPTER     Adapter,
+    IN  PPROCESSOR_NUMBER   Table,
+    IN  ULONG               TableSize
     )
 {
-    PROCESSOR_NUMBER    Mapping[NDIS_RSS_INDIRECTION_TABLE_MAX_SIZE_REVISION_1];
-    ULONG               Index;
-    NTSTATUS            status;
+    NTSTATUS                status;
 
     if (TableSize == 0) {
         AdapterDisableRSSHash(Adapter);
@@ -740,18 +727,12 @@ AdapterUpdateRSSTable(
 
     RtlZeroMemory(Adapter->Rss.Table, sizeof (Adapter->Rss.Table)) ;
     RtlCopyMemory(Adapter->Rss.Table, Table, TableSize);
-    Adapter->Rss.TableSize = TableSize;
-
-    RtlZeroMemory(Mapping, sizeof (Mapping));
-    for (Index = 0; Index < TableSize; Index++) {
-        Mapping[Index].Group = 0;
-        Mapping[Index].Number = Table[Index];
-    }
+    Adapter->Rss.TableCount = TableSize / sizeof(PROCESSOR_NUMBER);
 
     status = XENVIF_VIF(UpdateHashMapping,
                         &Adapter->VifInterface,
-                        Mapping,
-                        TableSize);
+                        Table,
+                        Adapter->Rss.TableCount);
 
     return (NT_SUCCESS(status)) ? NDIS_STATUS_SUCCESS : NDIS_STATUS_INVALID_DATA;
 }
@@ -900,12 +881,12 @@ DisplayRss(
         }
     }
 
-    if (Rss->TableSize != 0) {
+    if (Rss->TableCount != 0) {
         ULONG   Index;
 
         Trace("Table:\n");
 
-        for (Index = 0; Index < Rss->TableSize; ) {
+        for (Index = 0; Index < Rss->TableCount; ) {
             CHAR    Buffer[80];
             STRING  String;
             ULONG   Count;
@@ -916,8 +897,8 @@ DisplayRss(
             String.Length = 0;
 
             Count = 8;
-            if (Index + Count >= Rss->TableSize)
-                Count = Rss->TableSize - Index;
+            if (Index + Count >= Rss->TableCount)
+                Count = Rss->TableCount - Index;
 
             (VOID) StringPrintf(&String, "[%2u - %2u]: ",
                                 Index,
@@ -928,8 +909,9 @@ DisplayRss(
             String.Length = 0;
 
             for (Column = 0; Column < Count; Column++, Index++) {
-                (VOID) StringPrintf(&String, "%02x ",
-                                    Rss->Table[Index]);
+                (VOID) StringPrintf(&String, "%02x:%02x ",
+                                    Rss->Table[Index].Group,
+                                    Rss->Table[Index].Number);
 
                 String.Buffer += String.Length;
                 String.MaximumLength -= String.Length;
@@ -944,14 +926,21 @@ DisplayRss(
 static NDIS_STATUS
 AdapterGetReceiveScaleParameters(
     IN  PXENNET_ADAPTER                 Adapter,
-    IN  PNDIS_RECEIVE_SCALE_PARAMETERS  Parameters
+    IN  PNDIS_RECEIVE_SCALE_PARAMETERS  Parameters,
+    OUT PULONG                          BytesRead
     )
 {
     NDIS_STATUS                         ndisStatus;
 
     ASSERT3U(Parameters->Header.Type, ==, NDIS_OBJECT_TYPE_RSS_PARAMETERS);
-    ASSERT3U(Parameters->Header.Revision, ==, NDIS_RECEIVE_SCALE_PARAMETERS_REVISION_1);
-    ASSERT3U(Parameters->Header.Size, >=, NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_1);
+
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660) {
+        ASSERT3U(Parameters->Header.Revision, ==, NDIS_RECEIVE_SCALE_PARAMETERS_REVISION_3);
+        ASSERT3U(Parameters->Header.Size, >=, NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_3);
+    } else {
+        ASSERT3U(Parameters->Header.Revision, ==, NDIS_RECEIVE_SCALE_PARAMETERS_REVISION_2);
+        ASSERT3U(Parameters->Header.Size, >=, NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_2);
+    }
 
     if (!Adapter->Rss.Supported)
         return NDIS_STATUS_NOT_SUPPORTED;
@@ -961,6 +950,11 @@ AdapterGetReceiveScaleParameters(
 
     if (Adapter->Rss.HashEnabled)
         return NDIS_STATUS_NOT_SUPPORTED;
+
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660)
+        *BytesRead = NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_3;
+    else
+        *BytesRead = NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_2;
 
     if (!(Parameters->Flags & NDIS_RSS_PARAM_FLAG_DISABLE_RSS)) {
         Adapter->Rss.ScaleEnabled = TRUE;
@@ -981,14 +975,16 @@ AdapterGetReceiveScaleParameters(
                                          Parameters->HashSecretKeySize);
         if (ndisStatus != NDIS_STATUS_SUCCESS)
             goto fail;
+        *BytesRead += Parameters->HashSecretKeySize;
     }
 
     if (!(Parameters->Flags & NDIS_RSS_PARAM_FLAG_ITABLE_UNCHANGED)) {
         ndisStatus = AdapterUpdateRSSTable(Adapter,
-                                           (PCCHAR)Parameters + Parameters->IndirectionTableOffset,
+                                           (PPROCESSOR_NUMBER)((PCCHAR)Parameters + Parameters->IndirectionTableOffset),
                                            Parameters->IndirectionTableSize);
         if (ndisStatus != NDIS_STATUS_SUCCESS)
             goto fail;
+        *BytesRead += Parameters->IndirectionTableSize;
     }
 
     DisplayRss(&Adapter->Rss);
@@ -2051,26 +2047,6 @@ AdapterMediaStateChange(
     NdisMIndicateStatusEx(Adapter->NdisAdapterHandle, &StatusIndication);
 }
 
-void NdisDeviceStateInformation(BOOLEAN setPower, ULONG BufferLength, PVOID Buffer, const PWCHAR AdapterLocation) {
-#define _HANDLE_POWER_STATE(_state) \
-    case NdisDeviceState ## _state : \
-        Info("%s: %s: " #_state "\n", AdapterLocation, setPower ? "SET_POWER" : "QUERY_POWER"); \
-        break;
-
-	if (BufferLength >= sizeof(NDIS_DEVICE_POWER_STATE)) {
-		PNDIS_DEVICE_POWER_STATE PowerState = (PNDIS_DEVICE_POWER_STATE)Buffer;
-		switch (*PowerState) {
-			_HANDLE_POWER_STATE(D0)
-			_HANDLE_POWER_STATE(D1)
-			_HANDLE_POWER_STATE(D2)
-			_HANDLE_POWER_STATE(D3)
-			_HANDLE_POWER_STATE(Unspecified)
-			_HANDLE_POWER_STATE(Maximum)
-		}
-	}
-}
-
-
 NDIS_STATUS
 AdapterSetInformation(
     IN  PXENNET_ADAPTER     Adapter,
@@ -2092,7 +2068,33 @@ AdapterSetInformation(
 
     switch (Request->DATA.SET_INFORMATION.Oid) {
     case OID_PNP_SET_POWER:
-        NdisDeviceStateInformation(TRUE, BufferLength, Buffer, Adapter->Location);
+        BytesNeeded = sizeof(NDIS_DEVICE_POWER_STATE);
+        if (BufferLength >= BytesNeeded) {
+            PNDIS_DEVICE_POWER_STATE PowerState;
+
+            PowerState = (PNDIS_DEVICE_POWER_STATE)Buffer;
+            switch (*PowerState) {
+            case NdisDeviceStateD0:
+                Info("%ws: SET_POWER: D0\n",
+                     Adapter->Location);
+                break;
+
+            case NdisDeviceStateD1:
+                Info("%ws: SET_POWER: D1\n",
+                     Adapter->Location);
+                break;
+
+            case NdisDeviceStateD2:
+                Info("%ws: SET_POWER: D2\n",
+                     Adapter->Location);
+                break;
+
+            case NdisDeviceStateD3:
+                Info("%ws: SET_POWER: D3\n",
+                     Adapter->Location);
+                break;
+            }
+        }
         // do nothing
         break;
 
@@ -2110,7 +2112,8 @@ AdapterSetInformation(
         if (BufferLength == BytesNeeded) {
             ndisStatus = AdapterSetPacketFilter(Adapter,
                                                 (PULONG)Buffer);
-            BytesRead = sizeof(ULONG);
+            if (ndisStatus == NDIS_STATUS_SUCCESS)
+                BytesRead = sizeof(ULONG);
         }
         break;
 
@@ -2128,6 +2131,7 @@ AdapterSetInformation(
         break;
 
     case OID_OFFLOAD_ENCAPSULATION:
+        __analysis_assume(BytesNeeded > 0);
         BytesNeeded = NDIS_SIZEOF_OFFLOAD_ENCAPSULATION_REVISION_1;
         if (BufferLength >= BytesNeeded) {
             ndisStatus = AdapterGetOffloadEncapsulation(Adapter,
@@ -2140,24 +2144,26 @@ AdapterSetInformation(
         break;
 
     case OID_TCP_OFFLOAD_PARAMETERS:
-        BytesNeeded = NDIS_OFFLOAD_PARAMETERS_REVISION_2;
+        BytesNeeded = NDIS_SIZEOF_OFFLOAD_PARAMETERS_REVISION_3;
         if (BufferLength >= BytesNeeded) {
             ndisStatus = AdapterGetTcpOffloadParameters(Adapter,
                                                         (PNDIS_OFFLOAD_PARAMETERS)Buffer);
             if (ndisStatus == NDIS_STATUS_SUCCESS)
-                BytesRead = NDIS_OFFLOAD_PARAMETERS_REVISION_2;
+                BytesRead = NDIS_SIZEOF_OFFLOAD_PARAMETERS_REVISION_3;
         } else {
             ndisStatus = NDIS_STATUS_INVALID_LENGTH;
         }
         break;
 
     case OID_GEN_RECEIVE_SCALE_PARAMETERS:
-        BytesNeeded = NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_1;
+        if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660)
+            BytesNeeded = NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_3;
+        else
+            BytesNeeded = NDIS_SIZEOF_RECEIVE_SCALE_PARAMETERS_REVISION_2;
         if (BufferLength >= BytesNeeded) {
             ndisStatus = AdapterGetReceiveScaleParameters(Adapter,
-                                                          (PNDIS_RECEIVE_SCALE_PARAMETERS)Buffer);
-            if (ndisStatus == NDIS_STATUS_SUCCESS)
-                BytesRead = sizeof(NDIS_RECEIVE_SCALE_PARAMETERS);
+                                                          (PNDIS_RECEIVE_SCALE_PARAMETERS)Buffer,
+                                                          &BytesRead);
         } else {
             ndisStatus = NDIS_STATUS_INVALID_LENGTH;
         }
@@ -2182,7 +2188,7 @@ AdapterSetInformation(
         /*FALLTHRU*/
     default:
         if (Warn)
-            Warning("UNSUPPORTED OID %08x\n", Request->DATA.QUERY_INFORMATION.Oid);
+            Warning("UNSUPPORTED OID %08x\n", Request->DATA.SET_INFORMATION.Oid);
 
         ndisStatus = NDIS_STATUS_NOT_SUPPORTED;
         break;
@@ -2271,7 +2277,7 @@ AdapterQueryInformation(
     ndisStatus = NDIS_STATUS_SUCCESS;
 
     switch (Request->DATA.QUERY_INFORMATION.Oid) {
-    case OID_PNP_CAPABILITIES:
+    case OID_PM_CURRENT_CAPABILITIES:
         BytesNeeded = sizeof(Adapter->Capabilities);
         ndisStatus = __CopyBuffer(Buffer,
                                   BufferLength,
@@ -2281,7 +2287,34 @@ AdapterQueryInformation(
         break;
 
     case OID_PNP_QUERY_POWER:
-        NdisDeviceStateInformation(FALSE, BufferLength, Buffer, Adapter->Location);
+        BytesNeeded = sizeof(NDIS_DEVICE_POWER_STATE);
+
+        if (BufferLength >= BytesNeeded) {
+            PNDIS_DEVICE_POWER_STATE PowerState;
+
+            PowerState = (PNDIS_DEVICE_POWER_STATE)Buffer;
+            switch (*PowerState) {
+            case NdisDeviceStateD0:
+                Info("%ws: QUERY_POWER: D0\n",
+                     Adapter->Location);
+                break;
+
+            case NdisDeviceStateD1:
+                Info("%ws: QUERY_POWER: D1\n",
+                     Adapter->Location);
+                break;
+
+            case NdisDeviceStateD2:
+                Info("%ws: QUERY_POWER: D2\n",
+                     Adapter->Location);
+                break;
+
+            case NdisDeviceStateD3:
+                Info("%ws: QUERY_POWER: D3\n",
+                     Adapter->Location);
+                break;
+            }
+        }
 
         BytesWritten = 0;
         // do nothing
@@ -2356,10 +2389,21 @@ AdapterQueryInformation(
 
     case OID_GEN_DRIVER_VERSION:
         BytesNeeded = sizeof(ULONG);
+#ifdef NDIS_RUNTIME_VERSION_685
+        if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_685)
+            Value32 = (NDIS_MINIPORT_MAJOR_VERSION << 8) |
+                       NDIS_MINIPORT_MINOR_VERSION;
+        else
+#endif
+        if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660)
+            Value32 = (6 << 8) | 60; // NDIS 6.60
+        else
+            Value32 = (NDIS_MINIPORT_MINIMUM_MAJOR_VERSION << 8) |
+                       NDIS_MINIPORT_MINIMUM_MINOR_VERSION;
+
         ndisStatus = __SetUlong(Buffer,
                                 BufferLength,
-                                (NDIS_MINIPORT_MAJOR_VERSION << 8) |
-                                NDIS_MINIPORT_MINOR_VERSION,
+                                Value32,
                                 &BytesWritten);
         break;
 
@@ -2701,9 +2745,9 @@ AdapterQueryInformation(
     case OID_GEN_MAC_ADDRESS:
     case OID_GEN_MAX_LINK_SPEED:
         // ignore these common unwanted OIDs
-	case OID_GEN_INIT_TIME_MS:
-	case OID_GEN_RESET_COUNTS:
-	case OID_GEN_MEDIA_SENSE_COUNTS:
+    case OID_GEN_INIT_TIME_MS:
+    case OID_GEN_RESET_COUNTS:
+    case OID_GEN_MEDIA_SENSE_COUNTS:
         Warn = FALSE;
         /*FALLTHRU*/
     default:
@@ -2893,6 +2937,7 @@ AdapterGetAdvancedSettings(
     READ_PROPERTY(Adapter->Properties.lrov6, L"LROIPv6", 1, Handle);
     READ_PROPERTY(Adapter->Properties.need_csum_value, L"NeedChecksumValue", 1, Handle);
     READ_PROPERTY(Adapter->Properties.rss, L"*RSS", 1, Handle);
+    READ_PROPERTY(Adapter->Properties.numrssqueues, L"*NumRSSQueues", 8, Handle);
 
     NdisCloseConfiguration(Handle);
 
@@ -2916,11 +2961,12 @@ AdapterSetRegistrationAttributes(
 
     RtlZeroMemory(&Attribs, sizeof(Attribs));
     Attribs.Header.Type = NDIS_OBJECT_TYPE_MINIPORT_ADAPTER_REGISTRATION_ATTRIBUTES;
-    Attribs.Header.Revision = NDIS_MINIPORT_ADAPTER_REGISTRATION_ATTRIBUTES_REVISION_1;
-    Attribs.Header.Size = NDIS_SIZEOF_MINIPORT_ADAPTER_REGISTRATION_ATTRIBUTES_REVISION_1;
+    Attribs.Header.Revision = NDIS_MINIPORT_ADAPTER_REGISTRATION_ATTRIBUTES_REVISION_2;
+    Attribs.Header.Size = NDIS_SIZEOF_MINIPORT_ADAPTER_REGISTRATION_ATTRIBUTES_REVISION_2;
     Attribs.MiniportAdapterContext = (NDIS_HANDLE)Adapter;
     Attribs.AttributeFlags = NDIS_MINIPORT_ATTRIBUTES_BUS_MASTER |
-                             NDIS_MINIPORT_ATTRIBUTES_NO_HALT_ON_SUSPEND;
+                             NDIS_MINIPORT_ATTRIBUTES_NO_HALT_ON_SUSPEND |
+                             NDIS_MINIPORT_ATTRIBUTES_NDIS_WDM;
     Attribs.CheckForHangTimeInSeconds = 0;
     Attribs.InterfaceType = XENNET_INTERFACE_TYPE;
 
@@ -2941,10 +2987,15 @@ AdapterSetGeneralAttributes(
     NDIS_STATUS                                 ndisStatus;
     NTSTATUS                                    status;
 
+    RtlZeroMemory(&Adapter->Capabilities, sizeof(Adapter->Capabilities));
+    Adapter->Capabilities.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
+    Adapter->Capabilities.Header.Revision = NDIS_PM_CAPABILITIES_REVISION_2;
+    Adapter->Capabilities.Header.Size = NDIS_SIZEOF_NDIS_PM_CAPABILITIES_REVISION_2;
+
     RtlZeroMemory(&Attribs, sizeof(Attribs));
     Attribs.Header.Type = NDIS_OBJECT_TYPE_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES;
-    Attribs.Header.Revision = NDIS_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES_REVISION_1;
-    Attribs.Header.Size = NDIS_SIZEOF_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES_REVISION_1;
+    Attribs.Header.Revision = NDIS_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES_REVISION_2;
+    Attribs.Header.Size = NDIS_SIZEOF_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES_REVISION_2;
     Attribs.MediaType = XENNET_MEDIA_TYPE;
 
     XENVIF_VIF(MacQueryMaximumFrameSize,
@@ -2959,7 +3010,7 @@ AdapterSetGeneralAttributes(
     Attribs.MediaConnectState = MediaConnectStateConnected;
     Attribs.MediaDuplexState = MediaDuplexStateFull;
     Attribs.LookaheadSize = Adapter->MaximumFrameSize;
-    Attribs.PowerManagementCapabilities = &Adapter->Capabilities;
+    Attribs.PowerManagementCapabilitiesEx = &Adapter->Capabilities;
     Attribs.MacOptions = XENNET_MAC_OPTIONS;
     Attribs.SupportedPacketFilters = XENNET_SUPPORTED_PACKET_FILTERS;
     Attribs.MaxMulticastListSize = 32;
@@ -3021,8 +3072,14 @@ AdapterSetGeneralAttributes(
 
     RtlZeroMemory(&Rss, sizeof(Rss));
     Rss.Header.Type = NDIS_OBJECT_TYPE_RSS_CAPABILITIES;
-    Rss.Header.Revision = NDIS_RECEIVE_SCALE_CAPABILITIES_REVISION_1;
-    Rss.Header.Size = NDIS_SIZEOF_RECEIVE_SCALE_CAPABILITIES_REVISION_1;
+
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660) {
+        Rss.Header.Revision = NDIS_RECEIVE_SCALE_CAPABILITIES_REVISION_3;
+        Rss.Header.Size = NDIS_SIZEOF_RECEIVE_SCALE_CAPABILITIES_REVISION_3;
+    } else {
+        Rss.Header.Revision = NDIS_RECEIVE_SCALE_CAPABILITIES_REVISION_2;
+        Rss.Header.Size = NDIS_SIZEOF_RECEIVE_SCALE_CAPABILITIES_REVISION_2;
+    }
 
     Rss.CapabilitiesFlags = NDIS_RSS_CAPS_MESSAGE_SIGNALED_INTERRUPTS |
                             NDIS_RSS_CAPS_CLASSIFICATION_AT_ISR |
@@ -3039,6 +3096,12 @@ AdapterSetGeneralAttributes(
                &Adapter->VifInterface,
                &Rss.NumberOfReceiveQueues);
     Rss.NumberOfInterruptMessages = Rss.NumberOfReceiveQueues;
+
+    if ((ULONG)Adapter->Properties.numrssqueues < Rss.NumberOfReceiveQueues)
+        Rss.NumberOfReceiveQueues = Adapter->Properties.numrssqueues;
+
+    Rss.NumberOfInterruptMessages = Rss.NumberOfReceiveQueues;
+    Rss.NumberOfIndirectionTableEntries = 128; // WHQL requirement for NDIS 6.30
 
     Info("%ws: RSS ENABLED (%u QUEUES)\n",
          Adapter->Location,
@@ -3099,8 +3162,20 @@ AdapterSetOffloadAttributes(
 
     RtlZeroMemory(&Supported, sizeof(Supported));
     Supported.Header.Type = NDIS_OBJECT_TYPE_OFFLOAD;
-    Supported.Header.Revision = NDIS_OFFLOAD_REVISION_2;
-    Supported.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_2;
+
+#ifdef NDIS_RUNTIME_VERSION_685
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_685) {
+        Supported.Header.Revision = NDIS_OFFLOAD_REVISION_6;
+        Supported.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_6;
+    } else
+#endif
+    if (NdisGetVersion() >= NDIS_RUNTIME_VERSION_660) {
+        Supported.Header.Revision = NDIS_OFFLOAD_REVISION_4;
+        Supported.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_4;
+    } else {
+        Supported.Header.Revision = NDIS_OFFLOAD_REVISION_3;
+        Supported.Header.Size = NDIS_SIZEOF_NDIS_OFFLOAD_REVISION_3;
+    }
 
     Supported.Checksum.IPv4Receive.Encapsulation = NDIS_ENCAPSULATION_IEEE_802_3;
 

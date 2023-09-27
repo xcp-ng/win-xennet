@@ -1,4 +1,5 @@
-/* Copyright (c) Citrix Systems Inc.
+/* Copyright (c) Xen Project.
+ * Copyright (c) Cloud Software Group, Inc.
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, 
@@ -247,7 +248,7 @@ __ReceiverReceivePacket(
                                                     Length,
                                                     Cookie);
     if (NetBufferList == NULL)
-        return NULL;
+        goto fail1;
 
     NetBufferList->SourceHandle = AdapterGetHandle(Receiver->Adapter);
 
@@ -272,10 +273,8 @@ __ReceiverReceivePacket(
                                        Ieee8021QInfo.TagHeader.CanonicalFormatId,
                                        Ieee8021QInfo.TagHeader.VlanId);
 
-        if (Ieee8021QInfo.TagHeader.VlanId != 0) {
-            (VOID)__ReceiverReleaseNetBufferList(Receiver, NetBufferList, TRUE);
-            return NULL;
-        }
+        if (Ieee8021QInfo.TagHeader.VlanId != 0)
+            goto fail2;
 
         NET_BUFFER_LIST_INFO(NetBufferList, Ieee8021QNetBufferListInfo) = Ieee8021QInfo.Value;
     }
@@ -286,8 +285,6 @@ __ReceiverReceivePacket(
                                           NdisHashFunctionToeplitz);
         break;
 
-    case XENVIF_PACKET_HASH_ALGORITHM_NONE:
-    case XENVIF_PACKET_HASH_ALGORITHM_UNSPECIFIED:
     default:
         goto done;
     }
@@ -313,7 +310,6 @@ __ReceiverReceivePacket(
                                       NDIS_HASH_TCP_IPV6);
         break;
 
-    case XENVIF_PACKET_HASH_TYPE_NONE:
     default:
         ASSERT(FALSE);
         break;
@@ -324,6 +320,12 @@ __ReceiverReceivePacket(
 
 done:
     return NetBufferList;
+
+fail2:
+    (VOID) __ReceiverReleaseNetBufferList(Receiver, NetBufferList, TRUE);
+
+fail1:
+    return NULL;
 }
 
 static FORCEINLINE VOID __IndicateReceiveNetBufferLists(
@@ -377,7 +379,8 @@ static FORCEINLINE VOID __IndicateReceiveNetBufferLists(
 static VOID
 __ReceiverPushPackets(
     IN  PXENNET_RECEIVER    Receiver,
-    IN  ULONG               Index
+    IN  ULONG               Index,
+    OUT PBOOLEAN            Pause
     )
 {
     ULONG                   Flags;
@@ -411,8 +414,10 @@ __ReceiverPushPackets(
             NDIS_RECEIVE_FLAGS_PERFECT_FILTERED;
 
     ASSERT3S(Indicated - Returned, >=, 0);
-    if (Indicated - Returned > IN_NDIS_MAX)
+    if (Indicated - Returned > IN_NDIS_MAX) {
         Flags |= NDIS_RECEIVE_FLAGS_RESOURCES;
+        *Pause = TRUE;
+    }
 
     __IndicateReceiveNetBufferLists(Receiver,
                                     NetBufferList,
@@ -431,7 +436,7 @@ ReceiverInitialize(
     ULONG                           Index;
     NDIS_STATUS                     status;
 
-    *Receiver = ALLOCATE_POOL(NonPagedPool,
+    *Receiver = __AllocatePoolWithTag(NonPagedPool,
                                       sizeof(XENNET_RECEIVER),
                                       RECEIVER_POOL_TAG);
 
@@ -515,7 +520,7 @@ ReceiverTeardown(
 
     Receiver->Adapter = NULL;
 
-    ExFreePoolWithTag(Receiver, RECEIVER_POOL_TAG);
+    __FreePoolWithTag(Receiver, RECEIVER_POOL_TAG);
 }
 
 VOID
@@ -543,46 +548,59 @@ ReceiverQueuePacket(
     IN  PXENVIF_PACKET_INFO             Info,
     IN  PXENVIF_PACKET_HASH             Hash,
     IN  BOOLEAN                         More,
-    IN  PVOID                           Cookie
+    IN  PVOID                           Cookie,
+    OUT PBOOLEAN                        Pause
     )
 {
-	PXENVIF_VIF_INTERFACE VifInterface = AdapterGetVifInterface(Receiver->Adapter);
+    PXENVIF_VIF_INTERFACE               VifInterface;
+    PNET_BUFFER_LIST                    NetBufferList;
+    PXENNET_RECEIVER_QUEUE              Queue;
+    BOOLEAN                             Push = !More;
 
-	PNET_BUFFER_LIST NetBufferList = __ReceiverReceivePacket(Receiver,
-		Mdl,
-		Offset,
-		Length,
-		Flags,
-		MaximumSegmentSize,
-		TagControlInformation,
-		Info,
-		Hash,
-		Cookie);
+    VifInterface = AdapterGetVifInterface(Receiver->Adapter);
+
+    NetBufferList = __ReceiverReceivePacket(Receiver,
+                                            Mdl,
+                                            Offset,
+                                            Length,
+                                            Flags,
+                                            MaximumSegmentSize,
+                                            TagControlInformation,
+                                            Info,
+                                            Hash,
+                                            Cookie);
     if (NetBufferList == NULL) {
         XENVIF_VIF(ReceiverReturnPacket,
                    VifInterface,
                    Cookie);
-    }
-    else {
-        PXENNET_RECEIVER_QUEUE Queue = &Receiver->Queue[Index];
-
-        KeAcquireSpinLockAtDpcLevel(&Queue->Lock);
-
-        if (Queue->Head == NULL) {
-            ASSERT3U(Queue->Count, == , 0);
-            Queue->Head = Queue->Tail = NetBufferList;
-        }
-        else {
-            NET_BUFFER_LIST_NEXT_NBL(Queue->Tail) = NetBufferList;
-            Queue->Tail = NetBufferList;
-        }
-        Queue->Count++;
-
-        KeReleaseSpinLockFromDpcLevel(&Queue->Lock);
+        goto done;
     }
 
-    if (!More)
-        __ReceiverPushPackets(Receiver, Index);
+    Queue = &Receiver->Queue[Index];
+
+    KeAcquireSpinLockAtDpcLevel(&Queue->Lock);
+
+    if (Queue->Head == NULL) {
+        ASSERT3U(Queue->Count, ==, 0);
+        Queue->Head = Queue->Tail = NetBufferList;
+    } else {
+        NET_BUFFER_LIST_NEXT_NBL(Queue->Tail) = NetBufferList;
+        Queue->Tail = NetBufferList;
+    }
+    Queue->Count++;
+
+    // If we need to indicate low resources, then push the queued packets to NDIS.
+    if (!Push &&
+        Receiver->Indicated + Queue->Count - Receiver->Returned > IN_NDIS_MAX)
+        Push = TRUE;
+
+    KeReleaseSpinLockFromDpcLevel(&Queue->Lock);
+
+done:
+    *Pause = FALSE;
+
+    if (Push)
+        __ReceiverPushPackets(Receiver, Index, Pause);
 }
 
 PXENVIF_VIF_OFFLOAD_OPTIONS

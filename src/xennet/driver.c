@@ -1,4 +1,5 @@
-/* Copyright (c) Citrix Systems Inc.
+/* Copyright (c) Xen Project.
+ * Copyright (c) Cloud Software Group, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms,
@@ -94,7 +95,7 @@ QueryCapabilities(
 
     StackLocation = IoGetCurrentIrpStackLocation(Irp);
 
-    Context = ALLOCATE_POOL(NonPagedPool, sizeof (XENNET_CONTEXT), ' TEN');
+    Context = __AllocatePoolWithTag(NonPagedPool, sizeof (XENNET_CONTEXT), ' TEN');
     if (Context != NULL) {
         Context->Capabilities = StackLocation->Parameters.DeviceCapabilities.Capabilities;
         Context->CompletionRoutine = StackLocation->CompletionRoutine;
