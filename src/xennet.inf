@@ -37,6 +37,7 @@ Provider=%Vendor%
 CatalogFile=xennet.cat
 DriverVer=@INF_DATE@,@MAJOR_VERSION@.@MINOR_VERSION@.@MICRO_VERSION@.@BUILD_NUMBER@
 DriverPackageDisplayName=%DiskDesc%
+PnpLockdown=1
 
 [DestinationDirs] 
 DefaultDestDir=12 
