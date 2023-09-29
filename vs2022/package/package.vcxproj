@@ -46,9 +46,6 @@
     <ProjectReference Include="..\xennet\xennet.vcxproj">
       <Project>{97D9942B-5EA3-488C-B512-C96E5D077F8E}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\xennet_coinst\xennet_coinst.vcxproj">
-      <Project>{3EDD837A-C1BE-47D4-9603-16B61353670B}</Project>
-    </ProjectReference>
     <FilesToPackage Include="..\xennet.inf" />
   </ItemGroup>
   <ItemGroup Condition="Exists('$(DPINST_REDIST)')">
