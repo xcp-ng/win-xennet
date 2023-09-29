@@ -37,23 +37,19 @@ Provider=%Vendor%
 CatalogFile=xennet.cat
 DriverVer=@INF_DATE@,@MAJOR_VERSION@.@MINOR_VERSION@.@MICRO_VERSION@.@BUILD_NUMBER@
 DriverPackageDisplayName=%DiskDesc%
+PnpLockdown=1
 
 [DestinationDirs] 
 DefaultDestDir=12 
-CoInst_CopyFiles=11
 
 [SourceDisksNames]
 0=%DiskDesc%
 
 [SourceDisksFiles]
 xennet.sys=0,,
-xennet_coinst.dll=0,,
 
 [XenNet_Copyfiles]
 xennet.sys
-
-[CoInst_CopyFiles]
-xennet_coinst_@MAJOR_VERSION@_@MINOR_VERSION@_@MICRO_VERSION@_@BUILD_NUMBER@.dll,xennet_coinst.dll
 
 [Manufacturer] 
 %Vendor%=Inst,NT@INF_ARCH@
@@ -194,13 +190,6 @@ AddReg=XenNet_EventLog_AddReg
 [XenNet_EventLog_AddReg]
 HKR,,EventMessageFile,0x00020000,"%%SystemRoot%%\System32\netevent.dll"
 HKR,,TypesSupported,0x00010001,7
-
-[XenNet_Inst.CoInstallers]
-CopyFiles=CoInst_CopyFiles
-AddReg=CoInst_AddReg
-
-[CoInst_AddReg]
-HKR,,CoInstallers32,0x00010000,"xennet_coinst_@MAJOR_VERSION@_@MINOR_VERSION@_@MICRO_VERSION@_@BUILD_NUMBER@.dll,Entry"
 
 [Strings] 
 
