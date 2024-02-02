@@ -34,8 +34,11 @@
     </ResourceCompile>
     <Link>
       <AdditionalDependencies>$(DDK_LIB_PATH)\ndis.lib;$(DDK_LIB_PATH)/libcntpr.lib;$(DDK_LIB_PATH)/aux_klib.lib;$(DDK_LIB_PATH)/procgrp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <CETCompat>true</CETCompat>
+      <GenerateMapFile>true</GenerateMapFile>
+      <MapExports>true</MapExports>
     </Link>
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
@@ -56,9 +59,10 @@
       <AdditionalOptions>/Qspectre %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
   </ItemDefinitionGroup>
-<ItemGroup>
+  <ItemGroup>
     <FilesToPackage Include="$(TargetPath)" />
     <FilesToPackage Include="$(OutDir)$(TargetName).pdb" />
+    <FilesToPackage Include="$(OutDir)$(TargetName).map" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="../../src/xennet/adapter.c" />
