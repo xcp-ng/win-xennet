@@ -1964,7 +1964,8 @@ AdapterDisable(
     IN  PXENNET_ADAPTER     Adapter
     )
 {
-    ASSERT(Adapter->Enabled);
+    if (!Adapter->Enabled)
+        return;
     Adapter->Enabled = FALSE;
 
     ReceiverDisable(Adapter->Receiver);
