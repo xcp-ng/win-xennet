@@ -179,10 +179,13 @@ StartType=%SERVICE_DEMAND_START%
 ErrorControl=%SERVICE_ERROR_NORMAL% 
 ServiceBinary=%12%\xennet.sys 
 LoadOrderGroup="NDIS"
-AddReg = XenNet_BootFlags
+AddReg = XenNet_BootFlags,XenNet_Unplug
 
 [XenNet_BootFlags]
 HKR,,"BootFlags",0x00010003,0x81
+
+[XenNet_Unplug]
+HKLM,%ForceUnplugKey%,"NICS",0x00010001,1  ; @FORCE_UNPLUG@
 
 [XenNet_EventLog]
 AddReg=XenNet_EventLog_AddReg
@@ -196,6 +199,7 @@ HKR,,TypesSupported,0x00010001,7
 Vendor="@VENDOR_NAME@"
 DiskDesc="@PRODUCT_NAME@ PV Network Device Package" 
 XenNetName="@PRODUCT_NAME@ PV Network Device"
+ForceUnplugKey="SYSTEM\CurrentControlSet\Services\XEN\ForceUnplug"
 IPChecksumOffloadIPv4="IPv4 Checksum Offload"
 TCPChecksumOffloadIPv4="TCP Checksum Offload (IPv4)"
 UDPChecksumOffloadIPv4="UDP Checksum Offload (IPv4)"
