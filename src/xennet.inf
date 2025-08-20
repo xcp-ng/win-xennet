@@ -55,12 +55,10 @@ xennet.sys
 %Vendor%=Inst,NT@INF_ARCH@
 
 [Inst.NT@INF_ARCH@]
-; DisplayName		Section		DeviceID
-; -----------		-------		--------
-
-%XenNetName%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@@VENDOR_DEVICE_ID@&DEV_NET&REV_09000005
-%XenNetName%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@0001&DEV_NET&REV_09000005
-%XenNetName%		=XenNet_Inst,	XENVIF\VEN_@VENDOR_PREFIX@0002&DEV_NET&REV_09000005
+%XenNetName%=XenNet_Inst,\
+XENVIF\VEN_@VENDOR_PREFIX@@VENDOR_DEVICE_ID@&DEV_NET&REV_09000005,\
+XENVIF\VEN_@VENDOR_PREFIX@0001&DEV_NET&REV_09000005,\
+XENVIF\VEN_@VENDOR_PREFIX@0002&DEV_NET&REV_09000005
 
 [XenNet_Inst] 
 Characteristics=0x84
@@ -70,6 +68,8 @@ BusType=1
 *PhysicalMediaType=14	; NdisPhysicalMedium802_3
 CopyFiles=XenNet_Copyfiles
 AddReg=Xennet_Inst_AddReg
+; TODO: Remove during next PDO version bump
+FeatureScore=0xFE
 
 [XenNet_Inst_AddReg] 
 HKR, Ndi, Service, 0, "xennet"
