@@ -223,35 +223,6 @@ MiniportCancelSend(
 }
 
 static
-_Function_class_(MINIPORT_CHECK_FOR_HANG)
-BOOLEAN
-MiniportCheckForHangEx(
-    IN  NDIS_HANDLE MiniportAdapterContext
-    )
-{
-    UNREFERENCED_PARAMETER(MiniportAdapterContext);
-
-    return FALSE;
-}
-
-static
-_Function_class_(MINIPORT_RESET)
-NDIS_STATUS
-MiniportResetEx(
-    IN  NDIS_HANDLE MiniportAdapterContext,
-    OUT PBOOLEAN    AddressingReset
-    )
-{
-    UNREFERENCED_PARAMETER(MiniportAdapterContext);
-
-    Trace("<===>\n");
-
-    *AddressingReset = FALSE;
-
-    return NDIS_STATUS_SUCCESS;
-}
-
-static
 _Function_class_(MINIPORT_DEVICE_PNP_EVENT_NOTIFY)
 VOID
 MiniportDevicePnPEventNotify(
@@ -299,32 +270,6 @@ MiniportCancelOidRequest(
     Trace("<===>\n");
 }
 
-static
-_Function_class_(MINIPORT_DIRECT_OID_REQUEST)
-NDIS_STATUS
-MiniportDirectOidRequest(
-    IN  NDIS_HANDLE         MiniportAdapterContext,
-    IN  PNDIS_OID_REQUEST   OidRequest
-    )
-{
-    UNREFERENCED_PARAMETER(MiniportAdapterContext);
-    UNREFERENCED_PARAMETER(OidRequest);
-
-    return NDIS_STATUS_INVALID_OID;
-}
-
-static
-_Function_class_(MINIPORT_CANCEL_DIRECT_OID_REQUEST)
-VOID
-MiniportCancelDirectOidRequest(
-    IN  NDIS_HANDLE MiniportAdapterContext,
-    IN  PVOID       RequestId
-    )
-{
-    UNREFERENCED_PARAMETER(MiniportAdapterContext);
-    UNREFERENCED_PARAMETER(RequestId);
-}
-
 NDIS_STATUS
 MiniportRegister(
     IN  PDRIVER_OBJECT                      DriverObject,
@@ -366,20 +311,16 @@ MiniportRegister(
 
     MiniportDriverCharacteristics.CancelOidRequestHandler = MiniportCancelOidRequest;
     MiniportDriverCharacteristics.CancelSendHandler = MiniportCancelSend;
-    MiniportDriverCharacteristics.CheckForHangHandlerEx = MiniportCheckForHangEx;
     MiniportDriverCharacteristics.InitializeHandlerEx = MiniportInitializeEx;
     MiniportDriverCharacteristics.HaltHandlerEx = MiniportHaltEx;
     MiniportDriverCharacteristics.OidRequestHandler = MiniportOidRequest;
     MiniportDriverCharacteristics.PauseHandler = MiniportPause;
     MiniportDriverCharacteristics.DevicePnPEventNotifyHandler  = MiniportDevicePnPEventNotify;
-    MiniportDriverCharacteristics.ResetHandlerEx = MiniportResetEx;
     MiniportDriverCharacteristics.RestartHandler = MiniportRestart;
     MiniportDriverCharacteristics.ReturnNetBufferListsHandler = MiniportReturnNetBufferLists;
     MiniportDriverCharacteristics.SendNetBufferListsHandler = MiniportSendNetBufferLists;
     MiniportDriverCharacteristics.ShutdownHandlerEx = MiniportShutdownEx;
     MiniportDriverCharacteristics.UnloadHandler = MiniportDriverUnload;
-    MiniportDriverCharacteristics.DirectOidRequestHandler = MiniportDirectOidRequest;
-    MiniportDriverCharacteristics.CancelDirectOidRequestHandler = MiniportCancelDirectOidRequest;
 
     NdisStatus = NdisMRegisterMiniportDriver(DriverObject,
                                              RegistryPath,
