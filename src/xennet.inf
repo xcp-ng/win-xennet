@@ -52,7 +52,7 @@ xennet.sys=0,,
 xennet.sys
 
 [Manufacturer] 
-%Vendor%=Inst,NT@INF_ARCH@
+%Vendor%=Inst,NT@INF_ARCH@,NT@INF_ARCH@.10.0...25398
 
 [Inst.NT@INF_ARCH@]
 %XenNetName%=XenNet_Inst,\
@@ -60,7 +60,24 @@ XENVIF\VEN_@VENDOR_PREFIX@@VENDOR_DEVICE_ID@&DEV_NET&REV_09000005,\
 XENVIF\VEN_@VENDOR_PREFIX@0001&DEV_NET&REV_09000005,\
 XENVIF\VEN_@VENDOR_PREFIX@0002&DEV_NET&REV_09000005
 
+[Inst.NT@INF_ARCH@.10.0...25398]
+%XenNetName%=XenNet_Inst_25H2,\
+XENVIF\VEN_@VENDOR_PREFIX@@VENDOR_DEVICE_ID@&DEV_NET&REV_09000005,\
+XENVIF\VEN_@VENDOR_PREFIX@0001&DEV_NET&REV_09000005,\
+XENVIF\VEN_@VENDOR_PREFIX@0002&DEV_NET&REV_09000005
+
 [XenNet_Inst] 
+Characteristics=0x84
+BusType=1
+*IfType=6             	; IF_TYPE_ETHERNET_CSMACD
+*MediaType=0          	; NdisMedium802_3
+*PhysicalMediaType=14	; NdisPhysicalMedium802_3
+CopyFiles=XenNet_Copyfiles
+AddReg=Xennet_Inst_AddReg
+; TODO: Remove during next PDO version bump
+FeatureScore=0xFE
+
+[XenNet_Inst_25H2]
 Characteristics=0x84
 BusType=1
 *IfType=6             	; IF_TYPE_ETHERNET_CSMACD
@@ -172,6 +189,9 @@ HKR, Ndi\params\*NumRSSQueues,                    Max,        0, "8"
 [XenNet_Inst.Services] 
 AddService=xennet,0x02,XenNet_Service,XenNet_EventLog
 
+[XenNet_Inst_25H2.Services]
+AddService=xennet,0x02,XenNet_Service_25H2,XenNet_EventLog
+
 [XenNet_Service] 
 DisplayName=%XenNetName%
 ServiceType=%SERVICE_KERNEL_DRIVER% 
@@ -180,6 +200,16 @@ ErrorControl=%SERVICE_ERROR_NORMAL%
 ServiceBinary=%12%\xennet.sys 
 LoadOrderGroup="NDIS"
 AddReg = XenNet_BootFlags,XenNet_Unplug
+
+[XenNet_Service_25H2]
+DisplayName=%XenNetName%
+ServiceType=%SERVICE_KERNEL_DRIVER%
+StartType=%SERVICE_DEMAND_START%
+ErrorControl=%SERVICE_ERROR_NORMAL%
+ServiceBinary=%12%\xennet.sys
+LoadOrderGroup="NDIS"
+AddReg = XenNet_Unplug
+BootFlags = 0x81
 
 [XenNet_BootFlags]
 HKR,,"BootFlags",0x00010003,0x81
