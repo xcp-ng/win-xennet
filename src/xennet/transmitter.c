@@ -123,6 +123,7 @@ __TransmitterCompleteNetBufferList(
                                     NDIS_SEND_COMPLETE_FLAGS_DISPATCH_LEVEL);
 }
 
+static VOID
 __TransmitterGetNetBufferList(
     IN  PXENNET_TRANSMITTER     Transmitter,
     IN  PNET_BUFFER_LIST        NetBufferList
@@ -138,6 +139,7 @@ __TransmitterGetNetBufferList(
         ListReserved->Status = NDIS_STATUS_PENDING;
 }
 
+static VOID
 __TransmitterPutNetBufferList(
     IN  PXENNET_TRANSMITTER     Transmitter,
     IN  PNET_BUFFER_LIST        NetBufferList
