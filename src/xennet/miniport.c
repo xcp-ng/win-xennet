@@ -230,10 +230,16 @@ MiniportDevicePnPEventNotify(
     IN  PNET_DEVICE_PNP_EVENT   NetDevicePnPEvent
     )
 {
-    UNREFERENCED_PARAMETER(MiniportAdapterContext);
-    UNREFERENCED_PARAMETER(NetDevicePnPEvent);
+    PXENNET_ADAPTER             Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
 
-    Trace("<===>\n");
+    if (NetDevicePnPEvent->DevicePnPEvent != NdisDevicePnPEventSurpriseRemoved)
+        return;
+
+    Trace("====>\n");
+
+    AdapterDisable(Adapter);
+
+    Trace("<====\n");
 }
 
 static
