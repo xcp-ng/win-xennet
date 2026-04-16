@@ -2967,6 +2967,7 @@ AdapterSetRegistrationAttributes(
     Attribs.MiniportAdapterContext = (NDIS_HANDLE)Adapter;
     Attribs.AttributeFlags = NDIS_MINIPORT_ATTRIBUTES_BUS_MASTER |
                              NDIS_MINIPORT_ATTRIBUTES_NO_HALT_ON_SUSPEND |
+                             NDIS_MINIPORT_ATTRIBUTES_SURPRISE_REMOVE_OK |
                              NDIS_MINIPORT_ATTRIBUTES_NDIS_WDM;
     Attribs.CheckForHangTimeInSeconds = 0;
     Attribs.InterfaceType = XENNET_INTERFACE_TYPE;
