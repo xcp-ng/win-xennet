@@ -63,6 +63,7 @@ typedef struct _PROPERTIES {
     int lrov6;
     int rss;
     int numrssqueues;
+    int nblbatchmax;
 } PROPERTIES, *PPROPERTIES;
 
 typedef struct _XENNET_RSS {
@@ -1478,6 +1479,17 @@ AdapterGetHandle(
     )
 {
     return Adapter->NdisAdapterHandle;
+}
+
+ULONG
+AdapterGetNblMaxBatchSize(
+    IN  PXENNET_ADAPTER     Adapter
+    )
+{
+    ULONG val = (ULONG)Adapter->Properties.nblbatchmax;
+    if (val == 0 || val > NBL_BATCH_SIZE_MAX)
+        return NBL_BATCH_SIZE_DEFAULT;
+    return val;
 }
 
 PXENVIF_VIF_INTERFACE
@@ -2939,6 +2951,7 @@ AdapterGetAdvancedSettings(
     READ_PROPERTY(Adapter->Properties.need_csum_value, L"NeedChecksumValue", 1, Handle);
     READ_PROPERTY(Adapter->Properties.rss, L"*RSS", 1, Handle);
     READ_PROPERTY(Adapter->Properties.numrssqueues, L"*NumRSSQueues", 8, Handle);
+    READ_PROPERTY(Adapter->Properties.nblbatchmax, L"NblBatchMax", NBL_BATCH_SIZE_DEFAULT, Handle);
 
     NdisCloseConfiguration(Handle);
 

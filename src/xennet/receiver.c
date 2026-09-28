@@ -34,6 +34,7 @@
 #include <procgrp.h>
 #include <tcpip.h>
 #include <xen.h>
+#include <ethernet.h>
 
 #include "util.h"
 #include "receiver.h"
@@ -64,6 +65,7 @@ struct _XENNET_RECEIVER {
 
 typedef struct _NET_BUFFER_LIST_RESERVED {
     PVOID   Cookie;
+    USHORT  EtherType;
 } NET_BUFFER_LIST_RESERVED, *PNET_BUFFER_LIST_RESERVED;
 
 C_ASSERT(sizeof (NET_BUFFER_LIST_RESERVED) <= RTL_FIELD_SIZE(NET_BUFFER_LIST, MiniportReserved));
@@ -120,6 +122,7 @@ __ReceiverAllocateNetBufferList(
     IN  PMDL                    Mdl,
     IN  ULONG                   Offset,
     IN  ULONG                   Length,
+    IN  PXENVIF_PACKET_INFO     Info,
     IN  PVOID                   Cookie
     )
 {
@@ -156,10 +159,27 @@ __ReceiverAllocateNetBufferList(
 
     if (NetBufferList != NULL) {
         PNET_BUFFER_LIST_RESERVED   ListReserved;
+        USHORT                      EtherType = 0;
+
+        if (Info->EthernetHeader.Length != 0) {
+            PUCHAR              Buffer;
+            PETHERNET_HEADER    EthernetHeader;
+
+            Buffer = MmGetSystemAddressForMdlSafe(Mdl, NormalPagePriority | MdlMappingNoExecute);
+            if (Buffer != NULL) {
+                EthernetHeader = (PETHERNET_HEADER)(Buffer + Offset + Info->EthernetHeader.Offset);
+                EtherType = ETHERNET_HEADER_IS_TAGGED(EthernetHeader) ?
+                            EthernetHeader->Tagged.TypeOrLength :
+                            EthernetHeader->Untagged.TypeOrLength;
+                if (EtherType <= ETHERNET_MTU)
+                    EtherType = 0;
+            }
+        }
 
         ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
         ASSERT3P(ListReserved->Cookie, ==, NULL);
         ListReserved->Cookie = Cookie;
+        ListReserved->EtherType = EtherType;
     }
 
     return NetBufferList;
@@ -178,6 +198,7 @@ __ReceiverReleaseNetBufferList(
     ListReserved = (PNET_BUFFER_LIST_RESERVED)NET_BUFFER_LIST_MINIPORT_RESERVED(NetBufferList);
     Cookie = ListReserved->Cookie;
     ListReserved->Cookie = NULL;
+    ListReserved->EtherType = 0;
 
     if (Cache)
         __ReceiverPutNetBufferList(Receiver, NetBufferList);
@@ -240,12 +261,12 @@ __ReceiverReceivePacket(
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO   csumInfo;
 
     UNREFERENCED_PARAMETER(MaximumSegmentSize);
-    UNREFERENCED_PARAMETER(Info);
 
     NetBufferList = __ReceiverAllocateNetBufferList(Receiver,
                                                     Mdl,
                                                     Offset,
                                                     Length,
+                                                    Info,
                                                     Cookie);
     if (NetBufferList == NULL)
         goto fail1;
@@ -328,9 +349,11 @@ fail1:
     return NULL;
 }
 
-static FORCEINLINE VOID __IndicateReceiveNetBufferLists(
+
+static FORCEINLINE VOID
+__IndicateReceiveNetBufferLists(
     IN  PXENNET_RECEIVER    Receiver,
-    IN  PNET_BUFFER_LIST    NetBufferLists,
+    IN  PNET_BUFFER_LIST    Remaining,
     IN  NDIS_PORT_NUMBER    PortNumber,
     IN  ULONG               NumberOfNetBufferLists,
     IN  ULONG               ReceiveFlags
@@ -339,39 +362,70 @@ static FORCEINLINE VOID __IndicateReceiveNetBufferLists(
     PXENNET_ADAPTER         Adapter = Receiver->Adapter;
     NDIS_HANDLE             MiniportAdapterHandle = AdapterGetHandle(Adapter);
     PXENVIF_VIF_INTERFACE   VifInterface;
-    ULONG                   Count;
+    ULONG                   Count = 0;
+    ULONG                   NblMaxBatch = AdapterGetNblMaxBatchSize(Adapter);
 
-    VifInterface = AdapterGetVifInterface(Receiver->Adapter);
+    while (Remaining != NULL) {
+        PNET_BUFFER_LIST    BatchTail = Remaining;
+        PNET_BUFFER_LIST    NextNbl;
+        ULONG               BatchCount = 1;
+        ULONG               BatchFlags;
+        USHORT              FirstEth;
 
-    Count = 0;
-    while (NetBufferLists != NULL) {
-        PNET_BUFFER_LIST        Next;
+        FirstEth = ((PNET_BUFFER_LIST_RESERVED)
+                    NET_BUFFER_LIST_MINIPORT_RESERVED(Remaining))->EtherType;
+        NextNbl = NET_BUFFER_LIST_NEXT_NBL(BatchTail);
 
-        Next = NET_BUFFER_LIST_NEXT_NBL(NetBufferLists);
-        NET_BUFFER_LIST_NEXT_NBL(NetBufferLists) = NULL;
-
-        NdisMIndicateReceiveNetBufferLists(MiniportAdapterHandle,
-                                           NetBufferLists,
-                                           PortNumber,
-                                           1,
-                                           ReceiveFlags);
-
-        if (ReceiveFlags & NDIS_RECEIVE_FLAGS_RESOURCES) {
-            PVOID   Cookie;
-
-            Cookie = __ReceiverReleaseNetBufferList(Receiver,
-                                                    NetBufferLists,
-                                                    FALSE);
-
-            XENVIF_VIF(ReceiverReturnPacket,
-                       VifInterface,
-                       Cookie);
-
-            (VOID) InterlockedIncrement(&Receiver->Returned);
+        while (NextNbl != NULL && BatchCount < NblMaxBatch) {
+            USHORT  CurEth;
+            CurEth = ((PNET_BUFFER_LIST_RESERVED)
+                      NET_BUFFER_LIST_MINIPORT_RESERVED(NextNbl))->EtherType;
+            if (CurEth != FirstEth)
+                break;
+            BatchTail = NextNbl;
+            NextNbl = NET_BUFFER_LIST_NEXT_NBL(BatchTail);
+            BatchCount++;
         }
 
-        Count++;
-        NetBufferLists = Next;
+        NET_BUFFER_LIST_NEXT_NBL(BatchTail) = NULL;
+
+        BatchFlags = ReceiveFlags;
+        if (FirstEth != 0)
+            BatchFlags |= NDIS_RECEIVE_FLAGS_SINGLE_ETHER_TYPE;
+        else
+            BatchFlags &= ~NDIS_RECEIVE_FLAGS_SINGLE_ETHER_TYPE;
+
+        NdisMIndicateReceiveNetBufferLists(MiniportAdapterHandle,
+                                           Remaining,
+                                           PortNumber,
+                                           BatchCount,
+                                           BatchFlags);
+
+        if (BatchFlags & NDIS_RECEIVE_FLAGS_RESOURCES) {
+            PNET_BUFFER_LIST    Current = Remaining;
+
+            VifInterface = AdapterGetVifInterface(Receiver->Adapter);
+
+            while (Current != NULL) {
+                PNET_BUFFER_LIST    Next = NET_BUFFER_LIST_NEXT_NBL(Current);
+                NET_BUFFER_LIST_NEXT_NBL(Current) = NULL;
+
+                PVOID Cookie = __ReceiverReleaseNetBufferList(Receiver,
+                                                              Current,
+                                                              FALSE);
+
+                XENVIF_VIF(ReceiverReturnPacket,
+                           VifInterface,
+                           Cookie);
+
+                Current = Next;
+            }
+
+            (VOID)InterlockedAdd(&Receiver->Returned, BatchCount);
+        }
+
+        Count += BatchCount;
+        Remaining = NextNbl;
     }
     ASSERT3U(Count, ==, NumberOfNetBufferLists);
 }
@@ -402,13 +456,11 @@ __ReceiverPushPackets(
 
     KeReleaseSpinLockFromDpcLevel(&Queue->Lock);
 
-    (VOID) InterlockedAdd(&Receiver->Indicated, Count);
+    if (Count == 0)
+        return;
 
     Returned = Receiver->Returned;
-
-    KeMemoryBarrier();
-
-    Indicated = Receiver->Indicated;
+    Indicated = InterlockedAdd(&Receiver->Indicated, Count);
 
     Flags = NDIS_RECEIVE_FLAGS_DISPATCH_LEVEL |
             NDIS_RECEIVE_FLAGS_PERFECT_FILTERED;

@@ -121,4 +121,12 @@ AdapterQueryInformation(
     IN  PNDIS_OID_REQUEST   Request
     );
 
+#define NBL_BATCH_SIZE_DEFAULT  32
+#define NBL_BATCH_SIZE_MAX      64
+
+extern ULONG
+AdapterGetNblMaxBatchSize(
+    IN  PXENNET_ADAPTER     Adapter
+    );
+
 #endif // _XENNET_ADAPTER_H_

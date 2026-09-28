@@ -186,6 +186,11 @@ HKR, Ndi\params\*NumRSSQueues,                    Default,    0, "8"
 HKR, Ndi\params\*NumRSSQueues,                    Min,        0, "1"
 HKR, Ndi\params\*NumRSSQueues,                    Max,        0, "8"
 
+HKR, Ndi\Params\NblBatchMax, 			  		  ParamDesc,  0, %NblBatchMax%
+HKR, Ndi\Params\NblBatchMax, 			  		  Type,       0, "int"
+HKR, Ndi\Params\NblBatchMax, 			  		  Default,    0, "32"
+HKR, Ndi\Params\NblBatchMax, 			  		  Min, 	      0, "1"
+HKR, Ndi\Params\NblBatchMax, 			  		  Max, 	      0, "64"
 [XenNet_Inst.Services] 
 AddService=xennet,0x02,XenNet_Service,XenNet_EventLog
 
@@ -248,6 +253,7 @@ Enabled="Enabled"
 Enabled-Rx="Rx Enabled"
 Enabled-Tx="Tx Enabled"
 Enabled-TxRx="Rx & Tx Enabled"
+NblBatchMax="Max Receive Indicate NBLS"
 
 SERVICE_BOOT_START=0x0 
 SERVICE_SYSTEM_START=0x1 
