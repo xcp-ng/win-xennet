@@ -450,6 +450,7 @@ __ReceiverPushPackets(
 
     NetBufferList = Queue->Head;
     Count = Queue->Count;
+    *Pause = FALSE;
 
     Queue->Tail = Queue->Head = NULL;
     Queue->Count = 0;
