@@ -38,14 +38,14 @@
 extern NTSTATUS
 StringVPrintf(
     _In_ PSTRING    String,
-    _In_ const CHAR *Format,
+    _In_ PCSTR      Format,
     _In_ va_list    Arguments
     );
 
 extern NTSTATUS
 StringPrintf(
     _In_ PSTRING    String,
-    _In_ const CHAR *Format,
+    _In_ PCSTR      Format,
     ...
     );
 

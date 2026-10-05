@@ -239,7 +239,7 @@ AdapterVifCallback(
 
 static VOID
 DisplayOffload(
-    _In_ const CHAR     *Type,
+    _In_ PCSTR          Type,
     _In_ PNDIS_OFFLOAD  Offload
     )
 {
@@ -1542,7 +1542,7 @@ __AdapterFree(
 
 static FORCEINLINE PANSI_STRING
 __AdapterMultiSzToUpcaseAnsi(
-    _Inout_ PCHAR   Buffer
+    _Inout_ PSTR    Buffer
     )
 {
     PANSI_STRING    Ansi;
@@ -1621,7 +1621,7 @@ __AdapterFreeAnsi(
 static FORCEINLINE BOOLEAN
 __AdapterMatchDistribution(
     _In_ PXENNET_ADAPTER    Adapter,
-    _Inout_opt_ PCHAR       Buffer
+    _Inout_opt_ PSTR        Buffer
     )
 {
     PCHAR                   Vendor;
