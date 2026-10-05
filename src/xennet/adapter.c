@@ -1542,7 +1542,7 @@ __AdapterFree(
 
 static FORCEINLINE PANSI_STRING
 __AdapterMultiSzToUpcaseAnsi(
-    _In_ PCHAR      Buffer
+    _Inout_ PCHAR   Buffer
     )
 {
     PANSI_STRING    Ansi;
@@ -1621,7 +1621,7 @@ __AdapterFreeAnsi(
 static FORCEINLINE BOOLEAN
 __AdapterMatchDistribution(
     _In_ PXENNET_ADAPTER    Adapter,
-    _In_ PCHAR              Buffer
+    _Inout_opt_ PCHAR       Buffer
     )
 {
     PCHAR                   Vendor;
