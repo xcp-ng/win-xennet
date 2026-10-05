@@ -163,13 +163,13 @@ static NDIS_OID XennetSupportedOids[] =
 
 #define ADAPTER_POOL_TAG    'AteN'
 
-__drv_functionClass(MINIPORT_PROCESS_SG_LIST)
+_Function_class_(MINIPORT_PROCESS_SG_LIST)
 static VOID
 AdapterProcessSGList(
-    IN PDEVICE_OBJECT       DeviceObject,
-    IN PVOID                Reserved,
-    IN PSCATTER_GATHER_LIST SGL,
-    IN PVOID                Context
+    _In_ PDEVICE_OBJECT         DeviceObject,
+    _In_ PVOID                  Reserved,
+    _In_ PSCATTER_GATHER_LIST   SGL,
+    _In_ PVOID                  Context
     )
 {
     UNREFERENCED_PARAMETER(DeviceObject);
@@ -180,14 +180,14 @@ AdapterProcessSGList(
     ASSERT(FALSE);
 }
 
-__drv_functionClass(MINIPORT_ALLOCATE_SHARED_MEM_COMPLETE)
+_Function_class_(MINIPORT_ALLOCATE_SHARED_MEM_COMPLETE)
 static VOID
 AdapterAllocateComplete (
-    IN NDIS_HANDLE              MiniportAdapterContext,
-    IN PVOID                    VirtualAddress,
-    IN PNDIS_PHYSICAL_ADDRESS   PhysicalAddress,
-    IN ULONG                    Length,
-    IN PVOID                    Context
+    _In_ NDIS_HANDLE            MiniportAdapterContext,
+    _In_ PVOID                  VirtualAddress,
+    _In_ PNDIS_PHYSICAL_ADDRESS PhysicalAddress,
+    _In_ ULONG                  Length,
+    _In_ PVOID                  Context
     )
 {
     UNREFERENCED_PARAMETER(MiniportAdapterContext);
@@ -201,12 +201,12 @@ AdapterAllocateComplete (
 
 static VOID
 AdapterVifCallback(
-    IN  PVOID                           Context,
-    IN  XENVIF_VIF_CALLBACK_TYPE        Type,
-    IN  PXENVIF_VIF_CALLBACK_PARAMETERS Parameters
+    _In_ PVOID                              Context,
+    _In_ XENVIF_VIF_CALLBACK_TYPE           Type,
+    _In_ PXENVIF_VIF_CALLBACK_PARAMETERS    Parameters
     )
 {
-    PXENNET_ADAPTER                     Adapter = Context;
+    PXENNET_ADAPTER                         Adapter = Context;
 
     switch (Type) {
     case XENVIF_TRANSMITTER_RETURN_PACKET:
@@ -239,8 +239,8 @@ AdapterVifCallback(
 
 static VOID
 DisplayOffload(
-    IN  const CHAR      *Type,
-    IN  PNDIS_OFFLOAD   Offload
+    _In_ const CHAR     *Type,
+    _In_ PNDIS_OFFLOAD  Offload
     )
 {
     Trace("%s:\n", Type);
@@ -313,7 +313,7 @@ DisplayOffload(
 
 static VOID
 AdapterIndicateOffloadChanged(
-    IN  PXENNET_ADAPTER         Adapter
+    _In_ PXENNET_ADAPTER        Adapter
     )
 {
     NDIS_STATUS_INDICATION      Status;
@@ -441,8 +441,8 @@ AdapterIndicateOffloadChanged(
 
 static VOID
 AdapterGetPacketFilter(
-    IN  PXENNET_ADAPTER         Adapter,
-    OUT PULONG                  PacketFilter
+    _In_ PXENNET_ADAPTER    Adapter,
+    _Out_ PULONG            PacketFilter
     )
 {
     XENVIF_MAC_FILTER_LEVEL UnicastFilterLevel;
@@ -487,8 +487,8 @@ AdapterGetPacketFilter(
 
 static NDIS_STATUS
 AdapterSetPacketFilter(
-    IN  PXENNET_ADAPTER         Adapter,
-    IN  PULONG                  PacketFilter
+    _In_ PXENNET_ADAPTER    Adapter,
+    _In_ PULONG             PacketFilter
     )
 {
     XENVIF_MAC_FILTER_LEVEL UnicastFilterLevel;
@@ -543,13 +543,13 @@ done:
 
 static NDIS_STATUS
 AdapterGetOffloadEncapsulation(
-    IN  PXENNET_ADAPTER     Adapter,
-    IN  PNDIS_OFFLOAD_ENCAPSULATION Offload
+    _In_ PXENNET_ADAPTER                Adapter,
+    _In_ PNDIS_OFFLOAD_ENCAPSULATION    Offload
     )
 {
-    XENVIF_VIF_OFFLOAD_OPTIONS  Options;
-    PXENVIF_VIF_OFFLOAD_OPTIONS TxOptions;
-    PXENVIF_VIF_OFFLOAD_OPTIONS RxOptions;
+    XENVIF_VIF_OFFLOAD_OPTIONS          Options;
+    PXENVIF_VIF_OFFLOAD_OPTIONS         TxOptions;
+    PXENVIF_VIF_OFFLOAD_OPTIONS         RxOptions;
 
     if (Offload->IPv4.Enabled == NDIS_OFFLOAD_SET_ON &&
         Offload->IPv4.EncapsulationType != NDIS_ENCAPSULATION_IEEE_802_3)
@@ -624,8 +624,8 @@ invalid_parameter:
 
 static NDIS_STATUS
 AdapterGetTcpOffloadParameters(
-    IN  PXENNET_ADAPTER     Adapter,
-    IN  PNDIS_OFFLOAD_PARAMETERS    Offload
+    _In_ PXENNET_ADAPTER            Adapter,
+    _In_ PNDIS_OFFLOAD_PARAMETERS   Offload
     )
 {
     XENVIF_VIF_OFFLOAD_OPTIONS      Options;
@@ -698,7 +698,7 @@ invalid_parameter:
 
 static VOID
 AdapterDisableRSSHash(
-    IN  PXENNET_ADAPTER Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     )
 {
     Adapter->Rss.ScaleEnabled = FALSE;
@@ -711,9 +711,9 @@ AdapterDisableRSSHash(
 
 static NDIS_STATUS
 AdapterUpdateRSSTable(
-    IN  PXENNET_ADAPTER     Adapter,
-    IN  PPROCESSOR_NUMBER   Table,
-    IN  ULONG               TableSize
+    _In_ PXENNET_ADAPTER    Adapter,
+    _In_ PPROCESSOR_NUMBER  Table,
+    _In_ ULONG              TableSize
     )
 {
     NTSTATUS                status;
@@ -740,12 +740,12 @@ AdapterUpdateRSSTable(
 
 static NDIS_STATUS
 AdapterUpdateRSSKey(
-    IN  PXENNET_ADAPTER Adapter,
-    IN  PUCHAR          Key,
-    IN  ULONG           KeySize
+    _In_ PXENNET_ADAPTER    Adapter,
+    _In_ PUCHAR             Key,
+    _In_ ULONG              KeySize
     )
 {
-    NTSTATUS            status;
+    NTSTATUS                status;
 
     if (KeySize == 0) {
         AdapterDisableRSSHash(Adapter);
@@ -769,13 +769,13 @@ AdapterUpdateRSSKey(
 
 static NDIS_STATUS
 AdapterUpdateRSSHash(
-    IN  PXENNET_ADAPTER Adapter,
-    IN  ULONG           Information
+    _In_ PXENNET_ADAPTER    Adapter,
+    _In_ ULONG              Information
     )
 {
-    ULONG               HashType = NDIS_RSS_HASH_TYPE_FROM_HASH_INFO(Information);
-    ULONG               HashFunc = NDIS_RSS_HASH_FUNC_FROM_HASH_INFO(Information);
-    NTSTATUS            status;
+    ULONG                   HashType = NDIS_RSS_HASH_TYPE_FROM_HASH_INFO(Information);
+    ULONG                   HashFunc = NDIS_RSS_HASH_FUNC_FROM_HASH_INFO(Information);
+    NTSTATUS                status;
 
     if (HashFunc == 0) {
         AdapterDisableRSSHash(Adapter);
@@ -824,7 +824,7 @@ AdapterUpdateRSSHash(
 
 static VOID
 DisplayRss(
-    IN  PXENNET_RSS Rss
+    _In_ PXENNET_RSS    Rss
     )
 {
     Trace("HashEnabled: %s\n", (Rss->HashEnabled) ? "TRUE" : "FALSE");
@@ -926,9 +926,9 @@ DisplayRss(
 
 static NDIS_STATUS
 AdapterGetReceiveScaleParameters(
-    IN  PXENNET_ADAPTER                 Adapter,
-    IN  PNDIS_RECEIVE_SCALE_PARAMETERS  Parameters,
-    OUT PULONG                          BytesRead
+    _In_ PXENNET_ADAPTER                Adapter,
+    _In_ PNDIS_RECEIVE_SCALE_PARAMETERS Parameters,
+    _Out_ PULONG                        BytesRead
     )
 {
     NDIS_STATUS                         ndisStatus;
@@ -999,8 +999,8 @@ fail:
 
 static NDIS_STATUS
 AdapterGetReceiveHashParameters(
-    IN  PXENNET_ADAPTER                 Adapter,
-    IN  PNDIS_RECEIVE_HASH_PARAMETERS   Parameters
+    _In_ PXENNET_ADAPTER                Adapter,
+    _In_ PNDIS_RECEIVE_HASH_PARAMETERS  Parameters
     )
 {
     NDIS_STATUS                         ndisStatus;
@@ -1047,13 +1047,13 @@ fail:
 
 static NDIS_STATUS
 AdapterQueryGeneralStatistics(
-    IN  PXENNET_ADAPTER     Adapter,
-    IN  PNDIS_STATISTICS_INFO   Info,
-    IN  ULONG               BufferLength,
-    IN OUT PULONG           BytesWritten
+    _In_ PXENNET_ADAPTER        Adapter,
+    _In_ PNDIS_STATISTICS_INFO  Info,
+    _In_ ULONG                  BufferLength,
+    _Inout_ PULONG              BytesWritten
     )
 {
-    ULONGLONG   Value;
+    ULONGLONG                   Value;
 
     if (BufferLength < sizeof(NDIS_STATISTICS_INFO))
         goto fail1;
@@ -1225,16 +1225,16 @@ fail1:
 
 static NDIS_STATUS
 AdapterQueryMulticastList(
-    IN  PXENNET_ADAPTER     Adapter,
-    IN  PVOID               Buffer,
-    IN  ULONG               BufferLength,
-    IN OUT PULONG           BytesNeeded,
-    IN OUT PULONG           BytesWritten
+    _In_ PXENNET_ADAPTER    Adapter,
+    _In_ PVOID              Buffer,
+    _In_ ULONG              BufferLength,
+    _Inout_ PULONG          BytesNeeded,
+    _Inout_ PULONG          BytesWritten
     )
 {
-    ULONG       Count;
-    NDIS_STATUS ndisStatus;
-    NTSTATUS    status;
+    ULONG                   Count;
+    NDIS_STATUS             ndisStatus;
+    NTSTATUS                status;
 
     XENVIF_VIF(MacQueryMulticastAddresses,
                &Adapter->VifInterface,
@@ -1265,12 +1265,12 @@ fail1:
 
 static FORCEINLINE NDIS_STATUS
 AdapterSetMulticastAddresses(
-    IN  PXENNET_ADAPTER     Adapter,
-    IN  PETHERNET_ADDRESS   Address,
-    IN  ULONG               Count
+    _In_ PXENNET_ADAPTER    Adapter,
+    _In_ PETHERNET_ADDRESS  Address,
+    _In_ ULONG              Count
     )
 {
-    NTSTATUS        status;
+    NTSTATUS                status;
 
     status = XENVIF_VIF(MacSetMulticastAddresses,
                         &Adapter->VifInterface,
@@ -1284,11 +1284,11 @@ AdapterSetMulticastAddresses(
 
 static FORCEINLINE VOID
 AdapterGetXmitOk(
-    IN  PXENNET_ADAPTER     Adapter,
-    OUT PULONGLONG          Buffer
+    _In_ PXENNET_ADAPTER    Adapter,
+    _Out_ PULONGLONG        Buffer
     )
 {
-    ULONGLONG   Value;
+    ULONGLONG               Value;
 
     XENVIF_VIF(QueryStatistic,
                 &Adapter->VifInterface,
@@ -1314,11 +1314,11 @@ AdapterGetXmitOk(
 
 static FORCEINLINE VOID
 AdapterGetRcvOk(
-    IN  PXENNET_ADAPTER     Adapter,
-    OUT PULONGLONG          Buffer
+    _In_ PXENNET_ADAPTER    Adapter,
+    _Out_ PULONGLONG        Buffer
     )
 {
-    ULONGLONG   Value;
+    ULONGLONG               Value;
 
     XENVIF_VIF(QueryStatistic,
                 &Adapter->VifInterface,
@@ -1344,11 +1344,11 @@ AdapterGetRcvOk(
 
 static NDIS_STATUS
 AdapterGetXmitError(
-    IN  PXENNET_ADAPTER     Adapter,
-    OUT PULONG              Buffer
+    _In_ PXENNET_ADAPTER    Adapter,
+    _Out_ PULONG            Buffer
     )
 {
-    ULONGLONG   Value;
+    ULONGLONG               Value;
 
     XENVIF_VIF(QueryStatistic,
                 &Adapter->VifInterface,
@@ -1369,11 +1369,11 @@ AdapterGetXmitError(
 
 static FORCEINLINE NDIS_STATUS
 AdapterGetRcvError(
-    IN  PXENNET_ADAPTER     Adapter,
-    OUT PULONG              Buffer
+    _In_ PXENNET_ADAPTER    Adapter,
+    _Out_ PULONG            Buffer
     )
 {
-    ULONGLONG   Value;
+    ULONGLONG               Value;
 
     XENVIF_VIF(QueryStatistic,
                 &Adapter->VifInterface,
@@ -1394,10 +1394,10 @@ AdapterGetRcvError(
 
 static FORCEINLINE NDIS_STATUS
 AdapterInterruptModeration(
-    IN  PXENNET_ADAPTER                         Adapter,
-    IN  PNDIS_INTERRUPT_MODERATION_PARAMETERS   Params,
-    IN  ULONG                                   BufferLength,
-    IN OUT PULONG                               BytesWritten
+    _In_ PXENNET_ADAPTER                        Adapter,
+    _In_ PNDIS_INTERRUPT_MODERATION_PARAMETERS  Params,
+    _In_ ULONG                                  BufferLength,
+    _Inout_ PULONG                              BytesWritten
     )
 {
     UNREFERENCED_PARAMETER(Adapter);
@@ -1422,10 +1422,10 @@ fail1:
 
 static FORCEINLINE NDIS_STATUS
 AdapterReceiveHash(
-    IN  PXENNET_ADAPTER                 Adapter,
-    IN  PNDIS_RECEIVE_HASH_PARAMETERS   Params,
-    IN  ULONG                           BufferLength,
-    IN OUT PULONG                       BytesWritten
+    _In_ PXENNET_ADAPTER                Adapter,
+    _In_ PNDIS_RECEIVE_HASH_PARAMETERS  Params,
+    _In_ ULONG                          BufferLength,
+    _Inout_ PULONG                      BytesWritten
     )
 {
     ULONG                               HashType;
@@ -1475,7 +1475,7 @@ fail1:
 
 NDIS_HANDLE
 AdapterGetHandle(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     )
 {
     return Adapter->NdisAdapterHandle;
@@ -1483,10 +1483,10 @@ AdapterGetHandle(
 
 ULONG
 AdapterGetNblMaxBatchSize(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     )
 {
-    ULONG val = (ULONG)Adapter->Properties.nblbatchmax;
+    ULONG                   val = (ULONG)Adapter->Properties.nblbatchmax;
     if (val == 0 || val > NBL_BATCH_SIZE_MAX)
         return NBL_BATCH_SIZE_DEFAULT;
     return val;
@@ -1494,7 +1494,7 @@ AdapterGetNblMaxBatchSize(
 
 PXENVIF_VIF_INTERFACE
 AdapterGetVifInterface(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     )
 {
     return &Adapter->VifInterface;
@@ -1502,7 +1502,7 @@ AdapterGetVifInterface(
 
 PXENNET_TRANSMITTER
 AdapterGetTransmitter(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     )
 {
     return Adapter->Transmitter;
@@ -1510,7 +1510,7 @@ AdapterGetTransmitter(
 
 PXENNET_RECEIVER
 AdapterGetReceiver(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     )
 {
     return Adapter->Receiver;
@@ -1518,7 +1518,7 @@ AdapterGetReceiver(
 
 PWCHAR
 AdapterGetLocation(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     )
 {
     return Adapter->Location;
@@ -1526,7 +1526,7 @@ AdapterGetLocation(
 
 static FORCEINLINE PVOID
 __AdapterAllocate(
-    IN  ULONG   Length
+    _In_ ULONG  Length
     )
 {
     return __AllocatePoolWithTag(NonPagedPool, Length, ADAPTER_POOL_TAG);
@@ -1534,7 +1534,7 @@ __AdapterAllocate(
 
 static FORCEINLINE VOID
 __AdapterFree(
-    IN  PVOID   Buffer
+    _In_ PVOID  Buffer
     )
 {
     __FreePoolWithTag(Buffer, ADAPTER_POOL_TAG);
@@ -1542,7 +1542,7 @@ __AdapterFree(
 
 static FORCEINLINE PANSI_STRING
 __AdapterMultiSzToUpcaseAnsi(
-    IN  PCHAR       Buffer
+    _In_ PCHAR      Buffer
     )
 {
     PANSI_STRING    Ansi;
@@ -1607,7 +1607,7 @@ fail1:
 
 static FORCEINLINE VOID
 __AdapterFreeAnsi(
-    IN  PANSI_STRING    Ansi
+    _In_ PANSI_STRING   Ansi
     )
 {
     ULONG               Index;
@@ -1620,17 +1620,17 @@ __AdapterFreeAnsi(
 
 static FORCEINLINE BOOLEAN
 __AdapterMatchDistribution(
-    IN  PXENNET_ADAPTER Adapter,
-    IN  PCHAR           Buffer
+    _In_ PXENNET_ADAPTER    Adapter,
+    _In_ PCHAR              Buffer
     )
 {
-    PCHAR               Vendor;
-    PCHAR               Product;
-    PCHAR               Context;
-    const CHAR          *Text;
-    BOOLEAN             Match;
-    ULONG               Index;
-    NTSTATUS            status;
+    PCHAR                   Vendor;
+    PCHAR                   Product;
+    PCHAR                   Context;
+    const CHAR              *Text;
+    BOOLEAN                 Match;
+    ULONG                   Index;
+    NTSTATUS                status;
 
     UNREFERENCED_PARAMETER(Adapter);
 
@@ -1680,13 +1680,13 @@ fail1:
 
 static FORCEINLINE VOID
 __AdapterClearDistribution(
-    IN  PXENNET_ADAPTER Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     )
 {
-    PCHAR               Buffer;
-    PANSI_STRING        Distributions;
-    ULONG               Index;
-    NTSTATUS            status;
+    PCHAR                   Buffer;
+    PANSI_STRING            Distributions;
+    ULONG                   Index;
+    NTSTATUS                status;
 
     Trace("====>\n");
 
@@ -1743,15 +1743,15 @@ done:
 
 static FORCEINLINE NTSTATUS
 __AdapterSetDistribution(
-    IN  PXENNET_ADAPTER Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     )
 {
-    ULONG               Index;
-    CHAR                Distribution[MAXNAMELEN];
-    CHAR                Vendor[MAXNAMELEN];
-    STRING              String;
-    const CHAR          *Product;
-    NTSTATUS            status;
+    ULONG                   Index;
+    CHAR                    Distribution[MAXNAMELEN];
+    CHAR                    Vendor[MAXNAMELEN];
+    STRING                  String;
+    const CHAR              *Product;
+    NTSTATUS                status;
 
     Trace("====>\n");
 
@@ -1844,7 +1844,7 @@ fail1:
 
 static DECLSPEC_NOINLINE VOID
 AdapterSuspendCallbackLate(
-    IN  PVOID       Argument
+    _In_ PVOID      Argument
     )
 {
     PXENNET_ADAPTER Adapter = Argument;
@@ -1861,11 +1861,11 @@ AdapterSuspendCallbackLate(
 
 static NTSTATUS
 AdapterSetDistribution(
-    IN  PXENNET_ADAPTER Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     )
 {
-    LONG                Count;
-    NTSTATUS            status;
+    LONG                    Count;
+    NTSTATUS                status;
 
     Trace("====>\n");
 
@@ -1900,10 +1900,10 @@ fail1:
 
 static VOID
 AdapterClearDistribution(
-    IN  PXENNET_ADAPTER Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     )
 {
-    LONG                Count;
+    LONG                    Count;
 
     Trace("====>\n");
 
@@ -1922,7 +1922,7 @@ AdapterClearDistribution(
 
 NDIS_STATUS
 AdapterEnable(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     )
 {
     NTSTATUS                status;
@@ -1973,7 +1973,7 @@ fail1:
 
 VOID
 AdapterDisable(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     )
 {
     if (!Adapter->Enabled)
@@ -1995,8 +1995,8 @@ AdapterDisable(
 
 static VOID
 DisplayLinkState(
-    IN  PXENNET_ADAPTER     Adapter,
-    IN  PNDIS_LINK_STATE    LinkState
+    _In_ PXENNET_ADAPTER    Adapter,
+    _In_ PNDIS_LINK_STATE   LinkState
     )
 {
     if (LinkState->MediaConnectState == MediaConnectStateUnknown) {
@@ -2021,7 +2021,7 @@ DisplayLinkState(
 
 VOID
 AdapterMediaStateChange(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     )
 {
     NDIS_LINK_STATE         LinkState;
@@ -2062,8 +2062,8 @@ AdapterMediaStateChange(
 
 NDIS_STATUS
 AdapterSetInformation(
-    IN  PXENNET_ADAPTER     Adapter,
-    IN  PNDIS_OID_REQUEST   Request
+    _In_ PXENNET_ADAPTER    Adapter,
+    _In_ PNDIS_OID_REQUEST  Request
     )
 {
     PVOID                   Buffer;
@@ -2216,11 +2216,11 @@ AdapterSetInformation(
 
 static FORCEINLINE NDIS_STATUS
 __CopyBuffer(
-    IN  PVOID   Destination,
-    IN  ULONG   DestinationLength,
-    IN  PVOID   Source,
-    IN  ULONG   SourceLength,
-    OUT PULONG  CopyLength
+    _In_ PVOID      Destination,
+    _In_ ULONG      DestinationLength,
+    _In_ PVOID      Source,
+    _In_ ULONG      SourceLength,
+    _Out_ PULONG    CopyLength
     )
 {
     *CopyLength = __min(SourceLength, DestinationLength);
@@ -2233,10 +2233,10 @@ __CopyBuffer(
 
 static FORCEINLINE NDIS_STATUS
 __SetUlong(
-    IN  PVOID   Destination,
-    IN  ULONG   DestinationLength,
-    IN  ULONG   Source,
-    OUT PULONG  CopyLength
+    _In_ PVOID      Destination,
+    _In_ ULONG      DestinationLength,
+    _In_ ULONG      Source,
+    _Out_ PULONG    CopyLength
     )
 {
     return __CopyBuffer(Destination,
@@ -2248,13 +2248,13 @@ __SetUlong(
 
 static FORCEINLINE NDIS_STATUS
 __SetUlong64(
-    IN  PVOID   Destination,
-    IN  ULONG   DestinationLength,
-    IN  ULONG64 Source,
-    OUT PULONG  CopyLength
+    _In_ PVOID      Destination,
+    _In_ ULONG      DestinationLength,
+    _In_ ULONG64    Source,
+    _Out_ PULONG    CopyLength
     )
 {
-    NDIS_STATUS ndisStatus;
+    NDIS_STATUS     ndisStatus;
 
     ndisStatus =  __CopyBuffer(Destination,
                                DestinationLength & ~3,
@@ -2269,8 +2269,8 @@ __SetUlong64(
 
 NDIS_STATUS
 AdapterQueryInformation(
-    IN  PXENNET_ADAPTER     Adapter,
-    IN  PNDIS_OID_REQUEST   Request
+    _In_ PXENNET_ADAPTER    Adapter,
+    _In_ PNDIS_OID_REQUEST  Request
     )
 {
     PVOID                   Buffer;
@@ -2777,15 +2777,15 @@ AdapterQueryInformation(
     return ndisStatus;
 }
 
-__drv_requiresIRQL(PASSIVE_LEVEL)
+_IRQL_requires_(PASSIVE_LEVEL)
 static NTSTATUS
 __QueryInterface(
-    IN  PDEVICE_OBJECT  DeviceObject,
-    IN  const GUID      *Guid,
-    IN  ULONG           Version,
-    OUT PINTERFACE      Interface,
-    IN  ULONG           Size,
-    IN  BOOLEAN         Optional
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ const GUID     *Guid,
+    _In_ ULONG          Version,
+    _Out_ PINTERFACE    Interface,
+    _In_ ULONG          Size,
+    _In_ BOOLEAN        Optional
     )
 {
     KEVENT              Event;
@@ -2855,8 +2855,8 @@ fail1:
 
 static NTSTATUS
 __QueryLocationInformation(
-    IN  PDEVICE_OBJECT  DeviceObject,
-    OUT PWCHAR          *Location
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _Outptr_ PWCHAR     *Location
     )
 {
     ULONG               Size;
@@ -2921,7 +2921,7 @@ fail1:
 
 static NDIS_STATUS
 AdapterGetAdvancedSettings(
-    IN  PXENNET_ADAPTER Adapter
+    _In_ PXENNET_ADAPTER        Adapter
     )
 {
     NDIS_CONFIGURATION_OBJECT   Config;
@@ -2967,7 +2967,7 @@ fail1:
 
 static NDIS_STATUS
 AdapterSetRegistrationAttributes(
-    IN  PXENNET_ADAPTER Adapter
+    _In_ PXENNET_ADAPTER                            Adapter
     )
 {
     NDIS_MINIPORT_ADAPTER_REGISTRATION_ATTRIBUTES   Attribs;
@@ -2993,7 +2993,7 @@ AdapterSetRegistrationAttributes(
 
 static NDIS_STATUS
 AdapterSetGeneralAttributes(
-    IN  PXENNET_ADAPTER Adapter
+    _In_ PXENNET_ADAPTER                        Adapter
     )
 {
     NDIS_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES    Attribs;
@@ -3134,7 +3134,7 @@ done:
 
 static NDIS_STATUS
 AdapterSetOffloadAttributes(
-    IN  PXENNET_ADAPTER Adapter
+    _In_ PXENNET_ADAPTER                        Adapter
     )
 {
     NDIS_MINIPORT_ADAPTER_OFFLOAD_ATTRIBUTES    Attribs;
@@ -3320,14 +3320,14 @@ AdapterSetOffloadAttributes(
 
 NDIS_STATUS
 AdapterInitialize(
-    IN  NDIS_HANDLE         Handle,
-    OUT PXENNET_ADAPTER     *Adapter
+    _In_ NDIS_HANDLE            Handle,
+    _Outptr_ PXENNET_ADAPTER    *Adapter
     )
 {
-    NDIS_STATUS             ndisStatus;
-    NTSTATUS                status;
-    PDEVICE_OBJECT          DeviceObject;
-    NDIS_SG_DMA_DESCRIPTION Dma;
+    NDIS_STATUS                 ndisStatus;
+    NTSTATUS                    status;
+    PDEVICE_OBJECT              DeviceObject;
+    NDIS_SG_DMA_DESCRIPTION     Dma;
 
     *Adapter = __AdapterAllocate(sizeof (XENNET_ADAPTER));
 
@@ -3464,7 +3464,7 @@ fail1:
 
 VOID
 AdapterTeardown(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     )
 {
     TransmitterTeardown(Adapter->Transmitter);

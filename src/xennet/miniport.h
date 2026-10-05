@@ -35,9 +35,9 @@
 
 extern NDIS_STATUS
 MiniportRegister(
-    IN  PDRIVER_OBJECT  DriverObject,
-    IN  PUNICODE_STRING RegistryPath,
-    OUT PNDIS_HANDLE    NdisMiniportDriverHandle
+    _In_ PDRIVER_OBJECT     DriverObject,
+    _In_ PUNICODE_STRING    RegistryPath,
+    _Out_ PNDIS_HANDLE      NdisMiniportDriverHandle
     );
 
 #endif  // _XENNET_MINIPORT_H

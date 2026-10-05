@@ -40,8 +40,8 @@
 
 static FORCEINLINE NTSTATUS
 __StringPut(
-    IN  PSTRING String,
-    IN  CHAR    Character
+    _In_ PSTRING    String,
+    _In_ CHAR       Character
     )
 {
     if (String->Length >= String->MaximumLength - 1)
@@ -53,10 +53,10 @@ __StringPut(
 
 static PCHAR
 FormatNumber(
-    IN  PCHAR       Buffer,
-    IN  ULONGLONG   Value,
-    IN  UCHAR       Base,
-    IN  BOOLEAN     UpperCase
+    _In_ PCHAR      Buffer,
+    _In_ ULONGLONG  Value,
+    _In_ UCHAR      Base,
+    _In_ BOOLEAN    UpperCase
     )
 {
     ULONGLONG       Next = Value / Base;
@@ -113,9 +113,9 @@ FormatNumber(
 
 static NTSTATUS
 StringWriteBuffer(
-    IN  PSTRING         String,
-    IN  const CHAR      *Format,
-    IN  va_list         Arguments
+    _In_ PSTRING        String,
+    _In_ const CHAR     *Format,
+    _In_ va_list        Arguments
     )
 {
     CHAR                Character;
@@ -419,9 +419,9 @@ done:
 
 NTSTATUS
 StringVPrintf(
-    IN  PSTRING     String,
-    IN  const CHAR  *Format,
-    IN  va_list     Arguments
+    _In_ PSTRING    String,
+    _In_ const CHAR *Format,
+    _In_ va_list    Arguments
     )
 {
     NTSTATUS        status;
@@ -452,8 +452,8 @@ fail1:
 
 NTSTATUS
 StringPrintf(
-    IN  PSTRING     String,
-    IN  const CHAR  *Format,
+    _In_ PSTRING    String,
+    _In_ const CHAR *Format,
     ...
     )
 {

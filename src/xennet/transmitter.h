@@ -40,33 +40,33 @@ typedef struct _XENNET_TRANSMITTER XENNET_TRANSMITTER, *PXENNET_TRANSMITTER;
 #include "adapter.h"
 extern NDIS_STATUS
 TransmitterInitialize(
-    IN  PXENNET_ADAPTER     Adapter,
-    OUT PXENNET_TRANSMITTER *Transmitter
+    _In_ PXENNET_ADAPTER            Adapter,
+    _Outptr_ PXENNET_TRANSMITTER    *Transmitter
     );
 
 extern VOID
 TransmitterTeardown(
-    IN  PXENNET_TRANSMITTER Transmitter
+    _In_ PXENNET_TRANSMITTER    Transmitter
     );
 
 extern VOID
 TransmitterSendNetBufferLists (
-    IN  PXENNET_TRANSMITTER Transmitter,
-    IN  PNET_BUFFER_LIST    NetBufferList,
-    IN  NDIS_PORT_NUMBER    PortNumber,
-    IN  ULONG               SendFlags
+    _In_ PXENNET_TRANSMITTER    Transmitter,
+    _In_ PNET_BUFFER_LIST       NetBufferList,
+    _In_ NDIS_PORT_NUMBER       PortNumber,
+    _In_ ULONG                  SendFlags
     );
 
 extern VOID
 TransmitterReturnPacket(
-    IN  PXENNET_TRANSMITTER                         Transmitter,
-    IN  PVOID                                       Cookie,
-    IN  PXENVIF_TRANSMITTER_PACKET_COMPLETION_INFO  Completion
+    _In_ PXENNET_TRANSMITTER                        Transmitter,
+    _In_ PVOID                                      Cookie,
+    _In_ PXENVIF_TRANSMITTER_PACKET_COMPLETION_INFO Completion
     );
 
 extern PXENVIF_VIF_OFFLOAD_OPTIONS
 TransmitterOffloadOptions(
-    IN  PXENNET_TRANSMITTER Transmitter
+    _In_ PXENNET_TRANSMITTER    Transmitter
     );
 
 #endif // _XENNET_TRANSMITTER_H_

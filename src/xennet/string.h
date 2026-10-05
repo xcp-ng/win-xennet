@@ -37,15 +37,15 @@
 
 extern NTSTATUS
 StringVPrintf(
-    IN  PSTRING     String,
-    IN  const CHAR  *Format,
-    IN  va_list     Arguments
+    _In_ PSTRING    String,
+    _In_ const CHAR *Format,
+    _In_ va_list    Arguments
     );
 
 extern NTSTATUS
 StringPrintf(
-    IN  PSTRING     String,
-    IN  const CHAR  *Format,
+    _In_ PSTRING    String,
+    _In_ const CHAR *Format,
     ...
     );
 

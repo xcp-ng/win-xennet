@@ -48,7 +48,7 @@ static XENNET_DRIVER Driver;
 
 VOID
 DriverUnload(
-    IN  PDRIVER_OBJECT  DriverObject
+    _In_ PDRIVER_OBJECT DriverObject
     )
 {
     UNREFERENCED_PARAMETER(DriverObject);
@@ -75,17 +75,17 @@ DRIVER_INITIALIZE       DriverEntry;
 
 NTSTATUS
 DriverEntry (
-    IN  PDRIVER_OBJECT  DriverObject,
-    IN  PUNICODE_STRING RegistryPath
+    _In_ PDRIVER_OBJECT             DriverObject,
+    _In_ PUNICODE_STRING            RegistryPath
     )
 {
-    NDIS_STATUS ndisStatus;
-    NDIS_CONFIGURATION_OBJECT ConfigurationObject;
-    NDIS_HANDLE ConfigurationHandle;
-    NDIS_STRING ParameterName;
-    PNDIS_CONFIGURATION_PARAMETER ParameterValue;
-    ULONG FailCreateClose;
-    ULONG FailDeviceControl;
+    NDIS_STATUS                     ndisStatus;
+    NDIS_CONFIGURATION_OBJECT       ConfigurationObject;
+    NDIS_HANDLE                     ConfigurationHandle;
+    NDIS_STRING                     ParameterName;
+    PNDIS_CONFIGURATION_PARAMETER   ParameterValue;
+    ULONG                           FailCreateClose;
+    ULONG                           FailDeviceControl;
 
     ExInitializeDriverRuntime(DrvRtPoolNxOptIn);
     WdmlibProcgrpInitialize();

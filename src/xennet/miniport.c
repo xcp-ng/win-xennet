@@ -43,8 +43,8 @@ static
 _Function_class_(SET_OPTIONS)
 NDIS_STATUS
 MiniportSetOptions(
-    IN  NDIS_HANDLE NdisDriverHandle,
-    IN  NDIS_HANDLE DriverContext
+    _In_ NDIS_HANDLE    NdisDriverHandle,
+    _In_ NDIS_HANDLE    DriverContext
     )
 {
     UNREFERENCED_PARAMETER(NdisDriverHandle);
@@ -59,9 +59,9 @@ static
 _Function_class_(MINIPORT_INITIALIZE)
 NDIS_STATUS
 MiniportInitializeEx(
-    IN  NDIS_HANDLE                     NdisMiniportHandle,
-    IN  NDIS_HANDLE                     MiniportDriverContext,
-    IN  PNDIS_MINIPORT_INIT_PARAMETERS  MiniportInitParameters
+    _In_ NDIS_HANDLE                    NdisMiniportHandle,
+    _In_ NDIS_HANDLE                    MiniportDriverContext,
+    _In_ PNDIS_MINIPORT_INIT_PARAMETERS MiniportInitParameters
     )
 {
     PXENNET_ADAPTER                     Adapter;
@@ -86,8 +86,8 @@ static
 _Function_class_(MINIPORT_HALT)
 VOID
 MiniportHaltEx(
-    IN  NDIS_HANDLE         MiniportAdapterContext,
-    IN  NDIS_HALT_ACTION    HaltAction
+    _In_ NDIS_HANDLE        MiniportAdapterContext,
+    _In_ NDIS_HALT_ACTION   HaltAction
     )
 {
     PXENNET_ADAPTER         Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
@@ -104,7 +104,7 @@ static
 _Function_class_(MINIPORT_UNLOAD)
 VOID
 MiniportDriverUnload(
-    IN  PDRIVER_OBJECT  DriverObject
+    _In_ PDRIVER_OBJECT DriverObject
     )
 {
     DriverUnload(DriverObject);
@@ -114,11 +114,11 @@ static
 _Function_class_(MINIPORT_PAUSE)
 NDIS_STATUS
 MiniportPause(
-    IN  NDIS_HANDLE                     MiniportAdapterContext,
-    IN  PNDIS_MINIPORT_PAUSE_PARAMETERS MiniportPauseParameters
+    _In_ NDIS_HANDLE                        MiniportAdapterContext,
+    _In_ PNDIS_MINIPORT_PAUSE_PARAMETERS    MiniportPauseParameters
     )
 {
-    PXENNET_ADAPTER                     Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
+    PXENNET_ADAPTER                         Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
 
     UNREFERENCED_PARAMETER(MiniportPauseParameters);
 
@@ -131,8 +131,8 @@ static
 _Function_class_(MINIPORT_RESTART)
 NDIS_STATUS
 MiniportRestart(
-    IN  NDIS_HANDLE                         MiniportAdapterContext,
-    IN  PNDIS_MINIPORT_RESTART_PARAMETERS   MiniportRestartParameters
+    _In_ NDIS_HANDLE                        MiniportAdapterContext,
+    _In_ PNDIS_MINIPORT_RESTART_PARAMETERS  MiniportRestartParameters
     )
 {
     PXENNET_ADAPTER                         Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
@@ -149,8 +149,8 @@ static
 _Function_class_(MINIPORT_OID_REQUEST)
 NDIS_STATUS
 MiniportOidRequest(
-    IN  NDIS_HANDLE         MiniportAdapterContext,
-    IN  PNDIS_OID_REQUEST   OidRequest
+    _In_ NDIS_HANDLE        MiniportAdapterContext,
+    _In_ PNDIS_OID_REQUEST  OidRequest
     )
 {
     PXENNET_ADAPTER         Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
@@ -178,10 +178,10 @@ static
 _Function_class_(MINIPORT_SEND_NET_BUFFER_LISTS)
 VOID
 MiniportSendNetBufferLists(
-    IN  NDIS_HANDLE         MiniportAdapterContext,
-    IN  PNET_BUFFER_LIST    NetBufferList,
-    IN  NDIS_PORT_NUMBER    PortNumber,
-    IN  ULONG               SendFlags
+    _In_ NDIS_HANDLE        MiniportAdapterContext,
+    _In_ PNET_BUFFER_LIST   NetBufferList,
+    _In_ NDIS_PORT_NUMBER   PortNumber,
+    _In_ ULONG              SendFlags
     )
 {
     PXENNET_ADAPTER         Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
@@ -197,9 +197,9 @@ static
 _Function_class_(MINIPORT_RETURN_NET_BUFFER_LISTS)
 VOID
 MiniportReturnNetBufferLists(
-    IN  NDIS_HANDLE         MiniportAdapterContext,
-    IN  PNET_BUFFER_LIST    NetBufferLists,
-    IN  ULONG               ReturnFlags
+    _In_ NDIS_HANDLE        MiniportAdapterContext,
+    _In_ PNET_BUFFER_LIST   NetBufferLists,
+    _In_ ULONG              ReturnFlags
     )
 {
     PXENNET_ADAPTER         Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
@@ -214,8 +214,8 @@ static
 _Function_class_(MINIPORT_CANCEL_SEND)
 VOID
 MiniportCancelSend(
-    IN  NDIS_HANDLE MiniportAdapterContext,
-    IN  PVOID       CancelId
+    _In_ NDIS_HANDLE    MiniportAdapterContext,
+    _In_ PVOID          CancelId
     )
 {
     UNREFERENCED_PARAMETER(MiniportAdapterContext);
@@ -226,8 +226,8 @@ static
 _Function_class_(MINIPORT_DEVICE_PNP_EVENT_NOTIFY)
 VOID
 MiniportDevicePnPEventNotify(
-    IN  NDIS_HANDLE             MiniportAdapterContext,
-    IN  PNET_DEVICE_PNP_EVENT   NetDevicePnPEvent
+    _In_ NDIS_HANDLE            MiniportAdapterContext,
+    _In_ PNET_DEVICE_PNP_EVENT  NetDevicePnPEvent
     )
 {
     PXENNET_ADAPTER             Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
@@ -246,8 +246,8 @@ static
 _Function_class_(MINIPORT_SHUTDOWN)
 VOID
 MiniportShutdownEx(
-    IN  NDIS_HANDLE             MiniportAdapterContext,
-    IN  NDIS_SHUTDOWN_ACTION    ShutdownAction
+    _In_ NDIS_HANDLE            MiniportAdapterContext,
+    _In_ NDIS_SHUTDOWN_ACTION   ShutdownAction
     )
 {
     PXENNET_ADAPTER             Adapter = (PXENNET_ADAPTER)MiniportAdapterContext;
@@ -266,8 +266,8 @@ static
 _Function_class_(MINIPORT_CANCEL_OID_REQUEST)
 VOID
 MiniportCancelOidRequest(
-    IN  NDIS_HANDLE MiniportAdapterContext,
-    IN  PVOID       RequestId
+    _In_ NDIS_HANDLE    MiniportAdapterContext,
+    _In_ PVOID          RequestId
     )
 {
     UNREFERENCED_PARAMETER(MiniportAdapterContext);
@@ -278,9 +278,9 @@ MiniportCancelOidRequest(
 
 NDIS_STATUS
 MiniportRegister(
-    IN  PDRIVER_OBJECT                      DriverObject,
-    IN  PUNICODE_STRING                     RegistryPath,
-    OUT PNDIS_HANDLE                        NdisMiniportDriverHandle
+    _In_ PDRIVER_OBJECT                     DriverObject,
+    _In_ PUNICODE_STRING                    RegistryPath,
+    _Out_ PNDIS_HANDLE                      NdisMiniportDriverHandle
     )
 {
     NDIS_STATUS                             NdisStatus;

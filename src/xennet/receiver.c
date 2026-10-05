@@ -72,7 +72,7 @@ C_ASSERT(sizeof (NET_BUFFER_LIST_RESERVED) <= RTL_FIELD_SIZE(NET_BUFFER_LIST, Mi
 
 static FORCEINLINE PNET_BUFFER_LIST
 __ReceiverGetNetBufferList(
-    IN  PXENNET_RECEIVER    Receiver
+    _In_ PXENNET_RECEIVER   Receiver
     )
 {
     ULONG                   Index;
@@ -99,8 +99,8 @@ __ReceiverGetNetBufferList(
 
 static FORCEINLINE VOID
 __ReceiverPutNetBufferList(
-    IN  PXENNET_RECEIVER    Receiver,
-    IN  PNET_BUFFER_LIST    NetBufferList
+    _In_ PXENNET_RECEIVER   Receiver,
+    _In_ PNET_BUFFER_LIST   NetBufferList
     )
 {
     PNET_BUFFER_LIST        Old;
@@ -118,12 +118,12 @@ __ReceiverPutNetBufferList(
 
 static PNET_BUFFER_LIST
 __ReceiverAllocateNetBufferList(
-    IN  PXENNET_RECEIVER        Receiver,
-    IN  PMDL                    Mdl,
-    IN  ULONG                   Offset,
-    IN  ULONG                   Length,
-    IN  PXENVIF_PACKET_INFO     Info,
-    IN  PVOID                   Cookie
+    _In_ PXENNET_RECEIVER       Receiver,
+    _In_ PMDL                   Mdl,
+    _In_ ULONG                  Offset,
+    _In_ ULONG                  Length,
+    _In_ PXENVIF_PACKET_INFO    Info,
+    _In_ PVOID                  Cookie
     )
 {
     PNET_BUFFER_LIST            NetBufferList;
@@ -187,9 +187,9 @@ __ReceiverAllocateNetBufferList(
 
 static PVOID
 __ReceiverReleaseNetBufferList(
-    IN  PXENNET_RECEIVER        Receiver,
-    IN  PNET_BUFFER_LIST        NetBufferList,
-    IN  BOOLEAN                 Cache
+    _In_ PXENNET_RECEIVER       Receiver,
+    _In_ PNET_BUFFER_LIST       NetBufferList,
+    _In_ BOOLEAN                Cache
     )
 {
     PNET_BUFFER_LIST_RESERVED   ListReserved;
@@ -210,9 +210,9 @@ __ReceiverReleaseNetBufferList(
 
 static FORCEINLINE VOID
 __ReceiverReturnNetBufferLists(
-    IN  PXENNET_RECEIVER    Receiver,
-    IN  PNET_BUFFER_LIST    NetBufferList,
-    IN  BOOLEAN             Cache
+    _In_ PXENNET_RECEIVER   Receiver,
+    _In_ PNET_BUFFER_LIST   NetBufferList,
+    _In_ BOOLEAN            Cache
     )
 {
     PXENVIF_VIF_INTERFACE   VifInterface;
@@ -245,16 +245,16 @@ __ReceiverReturnNetBufferLists(
 
 static PNET_BUFFER_LIST
 __ReceiverReceivePacket(
-    IN  PXENNET_RECEIVER                        Receiver,
-    IN  PMDL                                    Mdl,
-    IN  ULONG                                   Offset,
-    IN  ULONG                                   Length,
-    IN  XENVIF_PACKET_CHECKSUM_FLAGS            Flags,
-    IN  USHORT                                  MaximumSegmentSize,
-    IN  USHORT                                  TagControlInformation,
-    IN  PXENVIF_PACKET_INFO                     Info,
-    IN  PXENVIF_PACKET_HASH                     Hash,
-    IN  PVOID                                   Cookie
+    _In_ PXENNET_RECEIVER                       Receiver,
+    _In_ PMDL                                   Mdl,
+    _In_ ULONG                                  Offset,
+    _In_ ULONG                                  Length,
+    _In_ XENVIF_PACKET_CHECKSUM_FLAGS           Flags,
+    _In_ USHORT                                 MaximumSegmentSize,
+    _In_ USHORT                                 TagControlInformation,
+    _In_ PXENVIF_PACKET_INFO                    Info,
+    _In_ PXENVIF_PACKET_HASH                    Hash,
+    _In_ PVOID                                  Cookie
     )
 {
     PNET_BUFFER_LIST                            NetBufferList;
@@ -352,11 +352,11 @@ fail1:
 
 static FORCEINLINE VOID
 __IndicateReceiveNetBufferLists(
-    IN  PXENNET_RECEIVER    Receiver,
-    IN  PNET_BUFFER_LIST    Remaining,
-    IN  NDIS_PORT_NUMBER    PortNumber,
-    IN  ULONG               NumberOfNetBufferLists,
-    IN  ULONG               ReceiveFlags
+    _In_ PXENNET_RECEIVER   Receiver,
+    _In_ PNET_BUFFER_LIST   Remaining,
+    _In_ NDIS_PORT_NUMBER   PortNumber,
+    _In_ ULONG              NumberOfNetBufferLists,
+    _In_ ULONG              ReceiveFlags
     )
 {
     PXENNET_ADAPTER         Adapter = Receiver->Adapter;
@@ -432,9 +432,9 @@ __IndicateReceiveNetBufferLists(
 
 static VOID
 __ReceiverPushPackets(
-    IN  PXENNET_RECEIVER    Receiver,
-    IN  ULONG               Index,
-    OUT PBOOLEAN            Pause
+    _In_ PXENNET_RECEIVER   Receiver,
+    _In_ ULONG              Index,
+    _Out_ PBOOLEAN          Pause
     )
 {
     ULONG                   Flags;
@@ -480,8 +480,8 @@ __ReceiverPushPackets(
 
 NDIS_STATUS
 ReceiverInitialize(
-    IN  PXENNET_ADAPTER     Adapter,
-    OUT PXENNET_RECEIVER    *Receiver
+    _In_ PXENNET_ADAPTER            Adapter,
+    _Outptr_ PXENNET_RECEIVER       *Receiver
     )
 {
     NET_BUFFER_LIST_POOL_PARAMETERS Params;
@@ -530,7 +530,7 @@ fail1:
 
 VOID
 ReceiverTeardown(
-    IN  PXENNET_RECEIVER    Receiver
+    _In_ PXENNET_RECEIVER   Receiver
     )
 {
     ULONG                   Index;
@@ -577,9 +577,9 @@ ReceiverTeardown(
 
 VOID
 ReceiverReturnNetBufferLists(
-    IN  PXENNET_RECEIVER    Receiver,
-    IN  PNET_BUFFER_LIST    NetBufferList,
-    IN  ULONG               ReturnFlags
+    _In_ PXENNET_RECEIVER   Receiver,
+    _In_ PNET_BUFFER_LIST   NetBufferList,
+    _In_ ULONG              ReturnFlags
     )
 {
     UNREFERENCED_PARAMETER(ReturnFlags);
@@ -589,19 +589,19 @@ ReceiverReturnNetBufferLists(
 
 VOID
 ReceiverQueuePacket(
-    IN  PXENNET_RECEIVER                Receiver,
-    IN  ULONG                           Index,
-    IN  PMDL                            Mdl,
-    IN  ULONG                           Offset,
-    IN  ULONG                           Length,
-    IN  XENVIF_PACKET_CHECKSUM_FLAGS    Flags,
-    IN  USHORT                          MaximumSegmentSize,
-    IN  USHORT                          TagControlInformation,
-    IN  PXENVIF_PACKET_INFO             Info,
-    IN  PXENVIF_PACKET_HASH             Hash,
-    IN  BOOLEAN                         More,
-    IN  PVOID                           Cookie,
-    OUT PBOOLEAN                        Pause
+    _In_ PXENNET_RECEIVER               Receiver,
+    _In_ ULONG                          Index,
+    _In_ PMDL                           Mdl,
+    _In_ ULONG                          Offset,
+    _In_ ULONG                          Length,
+    _In_ XENVIF_PACKET_CHECKSUM_FLAGS   Flags,
+    _In_ USHORT                         MaximumSegmentSize,
+    _In_ USHORT                         TagControlInformation,
+    _In_ PXENVIF_PACKET_INFO            Info,
+    _In_ PXENVIF_PACKET_HASH            Hash,
+    _In_ BOOLEAN                        More,
+    _In_ PVOID                          Cookie,
+    _Out_ PBOOLEAN                      Pause
     )
 {
     PXENVIF_VIF_INTERFACE               VifInterface;
@@ -657,7 +657,7 @@ done:
 
 PXENVIF_VIF_OFFLOAD_OPTIONS
 ReceiverOffloadOptions(
-    IN  PXENNET_RECEIVER    Receiver
+    _In_ PXENNET_RECEIVER   Receiver
     )
 {
     return &Receiver->OffloadOptions;
@@ -665,7 +665,7 @@ ReceiverOffloadOptions(
 
 VOID
 ReceiverEnable(
-    IN  PXENNET_RECEIVER    Receiver
+    _In_ PXENNET_RECEIVER   Receiver
     )
 {
     PXENNET_ADAPTER         Adapter = Receiver->Adapter;
@@ -676,7 +676,7 @@ ReceiverEnable(
 
 VOID
 ReceiverDisable(
-    IN  PXENNET_RECEIVER    Receiver
+    _In_ PXENNET_RECEIVER   Receiver
     )
 {
     PXENNET_ADAPTER         Adapter = Receiver->Adapter;

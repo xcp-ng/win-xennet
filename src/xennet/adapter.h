@@ -57,68 +57,68 @@ typedef struct _XENNET_ADAPTER XENNET_ADAPTER, *PXENNET_ADAPTER;
 
 extern NDIS_STATUS
 AdapterInitialize(
-    IN  NDIS_HANDLE         Handle,
-    OUT PXENNET_ADAPTER     *Adapter
+    _In_ NDIS_HANDLE            Handle,
+    _Outptr_ PXENNET_ADAPTER    *Adapter
     );
 
 extern VOID
 AdapterTeardown(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     );
 
 extern NDIS_HANDLE
 AdapterGetHandle(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     );
 
 #include <vif_interface.h>
 extern PXENVIF_VIF_INTERFACE
 AdapterGetVifInterface(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     );
 
 #include "transmitter.h"
 extern PXENNET_TRANSMITTER
 AdapterGetTransmitter(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     );
 
 #include "receiver.h"
 extern PXENNET_RECEIVER
 AdapterGetReceiver(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     );
 
 extern PWCHAR
 AdapterGetLocation(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     );
 
 extern NDIS_STATUS
 AdapterEnable(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     );
 
 extern VOID
 AdapterDisable(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     );
 
 extern VOID
 AdapterMediaStateChange(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     );
 
 extern NDIS_STATUS
 AdapterSetInformation(
-    IN  PXENNET_ADAPTER     Adapter,
-    IN  PNDIS_OID_REQUEST   Request
+    _In_ PXENNET_ADAPTER    Adapter,
+    _In_ PNDIS_OID_REQUEST  Request
     );
 
 extern NDIS_STATUS
 AdapterQueryInformation(
-    IN  PXENNET_ADAPTER     Adapter,
-    IN  PNDIS_OID_REQUEST   Request
+    _In_ PXENNET_ADAPTER    Adapter,
+    _In_ PNDIS_OID_REQUEST  Request
     );
 
 #define NBL_BATCH_SIZE_DEFAULT  32
@@ -126,7 +126,7 @@ AdapterQueryInformation(
 
 extern ULONG
 AdapterGetNblMaxBatchSize(
-    IN  PXENNET_ADAPTER     Adapter
+    _In_ PXENNET_ADAPTER    Adapter
     );
 
 #endif // _XENNET_ADAPTER_H_
