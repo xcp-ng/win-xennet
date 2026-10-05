@@ -53,7 +53,7 @@ __StringPut(
 
 static PCHAR
 FormatNumber(
-    _In_ PCHAR      Buffer,
+    _Out_ PCHAR     Buffer,
     _In_ ULONGLONG  Value,
     _In_ UCHAR      Base,
     _In_ BOOLEAN    UpperCase
