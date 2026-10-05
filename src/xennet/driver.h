@@ -35,7 +35,7 @@
 
 extern VOID
 DriverUnload(
-    IN  PDRIVER_OBJECT  DriverObject
+    _In_ PDRIVER_OBJECT DriverObject
     );
 
 #endif  // _XENNET_DRIVER_H

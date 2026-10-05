@@ -49,11 +49,11 @@ struct _XENNET_TRANSMITTER {
 
 NDIS_STATUS
 TransmitterInitialize (
-    IN  PXENNET_ADAPTER     Adapter,
-    OUT PXENNET_TRANSMITTER *Transmitter
+    _In_ PXENNET_ADAPTER            Adapter,
+    _Outptr_ PXENNET_TRANSMITTER    *Transmitter
     )
 {
-    NTSTATUS                status;
+    NTSTATUS                        status;
 
     *Transmitter = __AllocatePoolWithTag(NonPagedPool,
                                          sizeof(XENNET_TRANSMITTER),
@@ -79,7 +79,7 @@ fail1:
 
 VOID
 TransmitterTeardown(
-    IN  PXENNET_TRANSMITTER Transmitter
+    _In_ PXENNET_TRANSMITTER    Transmitter
     )
 {
     Transmitter->Adapter = NULL;
@@ -99,9 +99,9 @@ C_ASSERT(sizeof (NET_BUFFER_LIST_RESERVED) <= RTL_FIELD_SIZE(NET_BUFFER_LIST, Mi
 
 static VOID
 __TransmitterCompleteNetBufferList(
-    IN  PXENNET_TRANSMITTER     Transmitter,
-    IN  PNET_BUFFER_LIST        NetBufferList,
-    IN  NDIS_STATUS             Status
+    _In_ PXENNET_TRANSMITTER    Transmitter,
+    _In_ PNET_BUFFER_LIST       NetBufferList,
+    _In_ NDIS_STATUS            Status
     )
 {
     ASSERT3P(NET_BUFFER_LIST_NEXT_NBL(NetBufferList), ==, NULL);
@@ -125,8 +125,8 @@ __TransmitterCompleteNetBufferList(
 
 static VOID
 __TransmitterGetNetBufferList(
-    IN  PXENNET_TRANSMITTER     Transmitter,
-    IN  PNET_BUFFER_LIST        NetBufferList
+    _In_ PXENNET_TRANSMITTER    Transmitter,
+    _In_ PNET_BUFFER_LIST       NetBufferList
     )
 {
     PNET_BUFFER_LIST_RESERVED   ListReserved;
@@ -141,8 +141,8 @@ __TransmitterGetNetBufferList(
 
 static VOID
 __TransmitterPutNetBufferList(
-    IN  PXENNET_TRANSMITTER     Transmitter,
-    IN  PNET_BUFFER_LIST        NetBufferList
+    _In_ PXENNET_TRANSMITTER    Transmitter,
+    _In_ PNET_BUFFER_LIST       NetBufferList
     )
 {
     PNET_BUFFER_LIST_RESERVED   ListReserved;
@@ -160,9 +160,9 @@ __TransmitterPutNetBufferList(
 
 static VOID
 __TransmitterReturnPacket(
-    IN  PXENNET_TRANSMITTER     Transmitter,
-    IN  PVOID                   Cookie,
-    IN  NDIS_STATUS             Status
+    _In_ PXENNET_TRANSMITTER    Transmitter,
+    _In_ PVOID                  Cookie,
+    _In_ NDIS_STATUS            Status
     )
 {
     PNET_BUFFER_LIST            NetBufferList = Cookie;
@@ -178,10 +178,10 @@ __TransmitterReturnPacket(
 
 static VOID
 __TransmitterOffloadOptions(
-    IN  PNET_BUFFER_LIST            NetBufferList,
-    OUT PXENVIF_VIF_OFFLOAD_OPTIONS OffloadOptions,
-    OUT PUSHORT                     TagControlInformation,
-    OUT PUSHORT                     MaximumSegmentSize
+    _In_ PNET_BUFFER_LIST                               NetBufferList,
+    _Out_ PXENVIF_VIF_OFFLOAD_OPTIONS                   OffloadOptions,
+    _Out_ PUSHORT                                       TagControlInformation,
+    _Out_ PUSHORT                                       MaximumSegmentSize
     )
 {
     PNDIS_TCP_LARGE_SEND_OFFLOAD_NET_BUFFER_LIST_INFO   LargeSendInfo;
@@ -247,8 +247,8 @@ __TransmitterOffloadOptions(
 
 static VOID
 __TransmitterHash(
-    IN  PNET_BUFFER_LIST        NetBufferList,
-    OUT PXENVIF_PACKET_HASH     Hash
+    _In_ PNET_BUFFER_LIST       NetBufferList,
+    _Out_ PXENVIF_PACKET_HASH   Hash
     )
 {
     switch (NET_BUFFER_LIST_GET_HASH_FUNCTION(NetBufferList)) {
@@ -287,8 +287,8 @@ __TransmitterHash(
 
 static VOID
 __TransmitterSendNetBufferList(
-    IN  PXENNET_TRANSMITTER     Transmitter,
-    IN  PNET_BUFFER_LIST        NetBufferList
+    _In_ PXENNET_TRANSMITTER    Transmitter,
+    _In_ PNET_BUFFER_LIST       NetBufferList
     )
 {
     PNET_BUFFER_LIST_RESERVED   ListReserved;
@@ -360,10 +360,10 @@ __TransmitterSendNetBufferList(
 
 VOID
 TransmitterSendNetBufferLists(
-    IN  PXENNET_TRANSMITTER     Transmitter,
-    IN  PNET_BUFFER_LIST        NetBufferList,
-    IN  NDIS_PORT_NUMBER        PortNumber,
-    IN  ULONG                   SendFlags
+    _In_ PXENNET_TRANSMITTER    Transmitter,
+    _In_ PNET_BUFFER_LIST       NetBufferList,
+    _In_ NDIS_PORT_NUMBER       PortNumber,
+    _In_ ULONG                  SendFlags
     )
 {
     LIST_ENTRY                  List;
@@ -397,9 +397,9 @@ TransmitterSendNetBufferLists(
 
 VOID
 TransmitterReturnPacket(
-    IN  PXENNET_TRANSMITTER                         Transmitter,
-    IN  PVOID                                       Cookie,
-    IN  PXENVIF_TRANSMITTER_PACKET_COMPLETION_INFO  Completion
+    _In_ PXENNET_TRANSMITTER                        Transmitter,
+    _In_ PVOID                                      Cookie,
+    _In_ PXENVIF_TRANSMITTER_PACKET_COMPLETION_INFO Completion
     )
 {
     NDIS_STATUS                                     Status;
@@ -415,7 +415,7 @@ TransmitterReturnPacket(
 
 PXENVIF_VIF_OFFLOAD_OPTIONS
 TransmitterOffloadOptions(
-    IN  PXENNET_TRANSMITTER Transmitter
+    _In_ PXENNET_TRANSMITTER    Transmitter
     )
 {
     return &Transmitter->OffloadOptions;

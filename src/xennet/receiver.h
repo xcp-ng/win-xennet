@@ -40,52 +40,52 @@ typedef struct _XENNET_RECEIVER XENNET_RECEIVER, *PXENNET_RECEIVER;
 #include "adapter.h"
 extern NDIS_STATUS
 ReceiverInitialize(
-    IN  PXENNET_ADAPTER     Adapter,
-    OUT PXENNET_RECEIVER    *Receiver
+    _In_ PXENNET_ADAPTER        Adapter,
+    _Outptr_ PXENNET_RECEIVER   *Receiver
     );
 
 extern VOID
 ReceiverTeardown(
-    IN  PXENNET_RECEIVER    Receiver
+    _In_ PXENNET_RECEIVER   Receiver
     );
 
 extern VOID
 ReceiverReturnNetBufferLists(
-    IN  PXENNET_RECEIVER    Receiver,
-    IN  PNET_BUFFER_LIST    NetBufferList,
-    IN  ULONG               ReturnFlags
+    _In_ PXENNET_RECEIVER   Receiver,
+    _In_ PNET_BUFFER_LIST   NetBufferList,
+    _In_ ULONG              ReturnFlags
     );
 
 extern VOID
 ReceiverQueuePacket(
-    IN  PXENNET_RECEIVER                Receiver,
-    IN  ULONG                           Index,
-    IN  PMDL                            Mdl,
-    IN  ULONG                           Offset,
-    IN  ULONG                           Length,
-    IN  XENVIF_PACKET_CHECKSUM_FLAGS    Flags,
-    IN  USHORT                          MaximumSegmentSize,
-    IN  USHORT                          TagControlInformation,
-    IN  PXENVIF_PACKET_INFO             Info,
-    IN  PXENVIF_PACKET_HASH             Hash,
-    IN  BOOLEAN                         More,
-    IN  PVOID                           Cookie,
-    OUT PBOOLEAN                        Pause
+    _In_ PXENNET_RECEIVER               Receiver,
+    _In_ ULONG                          Index,
+    _In_ PMDL                           Mdl,
+    _In_ ULONG                          Offset,
+    _In_ ULONG                          Length,
+    _In_ XENVIF_PACKET_CHECKSUM_FLAGS   Flags,
+    _In_ USHORT                         MaximumSegmentSize,
+    _In_ USHORT                         TagControlInformation,
+    _In_ PXENVIF_PACKET_INFO            Info,
+    _In_ PXENVIF_PACKET_HASH            Hash,
+    _In_ BOOLEAN                        More,
+    _In_ PVOID                          Cookie,
+    _Out_ PBOOLEAN                      Pause
     );
 
 extern PXENVIF_VIF_OFFLOAD_OPTIONS
 ReceiverOffloadOptions(
-    IN  PXENNET_RECEIVER    Receiver
+    _In_ PXENNET_RECEIVER   Receiver
     );
 
 extern VOID
 ReceiverEnable(
-    IN  PXENNET_RECEIVER    Receiver
+    _In_ PXENNET_RECEIVER   Receiver
     );
 
 extern VOID
 ReceiverDisable(
-    IN  PXENNET_RECEIVER    Receiver
+    _In_ PXENNET_RECEIVER   Receiver
     );
 
 #endif // _XENNET_RECEIVER_H_

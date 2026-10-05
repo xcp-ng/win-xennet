@@ -89,7 +89,7 @@ __CpuId(
     _Out_opt_ PULONG    EDX
     )
 {
-    int         Value[4] = {0};
+    int                 Value[4] = {0};
 
     __cpuid(Value, Leaf);
 
@@ -112,8 +112,8 @@ __InterlockedAdd(
     _In_ LONG       Delta
     )
 {
-    LONG        New;
-    LONG        Old;
+    LONG            New;
+    LONG            Old;
 
     do {
         Old = *Value;
@@ -129,8 +129,8 @@ __InterlockedSubtract(
     _In_ LONG       Delta
     )
 {
-    LONG        New;
-    LONG        Old;
+    LONG            New;
+    LONG            Old;
 
     do {
         Old = *Value;
@@ -262,7 +262,7 @@ __FreePages(
     _In_ PMDL   Mdl
     )
 {
-    PUCHAR	MdlMappedSystemVa;
+    PUCHAR      MdlMappedSystemVa;
 
     ASSERT(Mdl->MdlFlags & MDL_MAPPED_TO_SYSTEM_VA);
     MdlMappedSystemVa = Mdl->MappedSystemVa;

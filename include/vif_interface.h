@@ -461,7 +461,7 @@ union _XENVIF_VIF_CALLBACK_PARAMETERS_V10 {
 */  
 typedef NTSTATUS
 (*XENVIF_VIF_ACQUIRE)(
-    IN  PINTERFACE  Interface
+    _In_ PINTERFACE Interface
     );
 
 /*! \typedef XENVIF_VIF_RELEASE
@@ -471,21 +471,21 @@ typedef NTSTATUS
 */  
 typedef VOID
 (*XENVIF_VIF_RELEASE)(
-    IN  PINTERFACE  Interface
+    _In_ PINTERFACE Interface
     );
 
 typedef VOID
 (*XENVIF_VIF_CALLBACK_V8)(
-    IN  PVOID                       Argument OPTIONAL,
-    IN  XENVIF_VIF_CALLBACK_TYPE    Type,
+    _In_opt_ PVOID                  Argument,
+    _In_ XENVIF_VIF_CALLBACK_TYPE   Type,
     ...
     );
 
 typedef VOID
 (*XENVIF_VIF_CALLBACK_V9)(
-    IN  PVOID                                       Argument OPTIONAL,
-    IN  XENVIF_VIF_CALLBACK_TYPE                    Type,
-    IN  union _XENVIF_VIF_CALLBACK_PARAMETERS_V9   *Parameters
+    _In_opt_ PVOID                                  Argument,
+    _In_ XENVIF_VIF_CALLBACK_TYPE                   Type,
+    _In_ union _XENVIF_VIF_CALLBACK_PARAMETERS_V9   *Parameters
     );
 
 typedef union _XENVIF_VIF_CALLBACK_PARAMETERS_V10 XENVIF_VIF_CALLBACK_PARAMETERS, *PXENVIF_VIF_CALLBACK_PARAMETERS;
@@ -499,23 +499,23 @@ typedef union _XENVIF_VIF_CALLBACK_PARAMETERS_V10 XENVIF_VIF_CALLBACK_PARAMETERS
 */
 typedef VOID
 (*XENVIF_VIF_CALLBACK)(
-    IN  PVOID                           Argument OPTIONAL,
-    IN  XENVIF_VIF_CALLBACK_TYPE        Type,
-    IN  PXENVIF_VIF_CALLBACK_PARAMETERS Parameters
+    _In_opt_ PVOID                          Argument,
+    _In_ XENVIF_VIF_CALLBACK_TYPE           Type,
+    _In_ PXENVIF_VIF_CALLBACK_PARAMETERS    Parameters
     );
 
 typedef NTSTATUS
 (*XENVIF_VIF_ENABLE_V8)(
-    IN  PINTERFACE              Interface,
-    IN  XENVIF_VIF_CALLBACK_V8  Callback,
-    IN  PVOID                   Argument OPTIONAL
+    _In_ PINTERFACE             Interface,
+    _In_ XENVIF_VIF_CALLBACK_V8 Callback,
+    _In_opt_ PVOID              Argument
     );
 
 typedef NTSTATUS
 (*XENVIF_VIF_ENABLE_V9)(
-    IN  PINTERFACE              Interface,
-    IN  XENVIF_VIF_CALLBACK_V9  Callback,
-    IN  PVOID                   Argument OPTIONAL
+    _In_ PINTERFACE             Interface,
+    _In_ XENVIF_VIF_CALLBACK_V9 Callback,
+    _In_opt_ PVOID              Argument
     );
 
 /*! \typedef XENVIF_VIF_ENABLE
@@ -530,9 +530,9 @@ typedef NTSTATUS
 */
 typedef NTSTATUS
 (*XENVIF_VIF_ENABLE)(
-    IN  PINTERFACE          Interface,
-    IN  XENVIF_VIF_CALLBACK Callback,
-    IN  PVOID               Argument OPTIONAL
+    _In_ PINTERFACE             Interface,
+    _In_ XENVIF_VIF_CALLBACK    Callback,
+    _In_opt_ PVOID              Argument
     );
 
 /*! \typedef XENVIF_VIF_DISABLE
@@ -545,7 +545,7 @@ typedef NTSTATUS
 */
 typedef VOID
 (*XENVIF_VIF_DISABLE)(
-    IN  PINTERFACE  Interface
+    _In_ PINTERFACE Interface
     );
 
 /*! \typedef XENVIF_VIF_QUERY_STATISTIC
@@ -562,9 +562,9 @@ typedef VOID
 */
 typedef NTSTATUS
 (*XENVIF_VIF_QUERY_STATISTIC)(
-    IN  PINTERFACE              Interface,
-    IN  XENVIF_VIF_STATISTIC    Index,
-    OUT PULONGLONG              Value
+    _In_ PINTERFACE             Interface,
+    _In_ XENVIF_VIF_STATISTIC   Index,
+    _Out_ PULONGLONG            Value
     );
 
 /*! \typedef XENVIF_VIF_QUERY_RING_COUNT
@@ -576,8 +576,8 @@ typedef NTSTATUS
 */
 typedef VOID
 (*XENVIF_VIF_QUERY_RING_COUNT)(
-    IN  PINTERFACE  Interface,
-    OUT PULONG      Count
+    _In_ PINTERFACE Interface,
+    _Out_ PULONG    Count
     );
 
 /*! \typedef XENVIF_VIF_UPDATE_HASH_MAPPING
@@ -591,9 +591,9 @@ typedef VOID
 */
 typedef NTSTATUS
 (*XENVIF_VIF_UPDATE_HASH_MAPPING)(
-    IN  PINTERFACE          Interface,
-    IN  PPROCESSOR_NUMBER   Mapping,
-    IN  ULONG               Size
+    _In_ PINTERFACE         Interface,
+    _In_ PPROCESSOR_NUMBER  Mapping,
+    _In_ ULONG              Size
     );
 
 /*! \typedef XENVIF_VIF_RECEIVER_RETURN_PACKET
@@ -605,8 +605,8 @@ typedef NTSTATUS
 */
 typedef VOID
 (*XENVIF_VIF_RECEIVER_RETURN_PACKET)(
-    IN  PINTERFACE  Interface,
-    IN  PVOID       Cookie
+    _In_ PINTERFACE Interface,
+    _In_ PVOID      Cookie
     );
 
 /*! \typedef XENVIF_VIF_TRANSMITTER_QUEUE_PACKET
@@ -625,16 +625,16 @@ typedef VOID
 */
 typedef NTSTATUS
 (*XENVIF_VIF_TRANSMITTER_QUEUE_PACKET)(
-    IN  PINTERFACE                  Interface,
-    IN  PMDL                        Mdl,
-    IN  ULONG                       Offset,
-    IN  ULONG                       Length,
-    IN  XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions,
-    IN  USHORT                      MaximumSegmentSize,
-    IN  USHORT                      TagControlInformation,
-    IN  PXENVIF_PACKET_HASH         Hash,
-    IN  BOOLEAN                     More,
-    IN  PVOID                       Cookie
+    _In_ PINTERFACE                 Interface,
+    _In_ PMDL                       Mdl,
+    _In_ ULONG                      Offset,
+    _In_ ULONG                      Length,
+    _In_ XENVIF_VIF_OFFLOAD_OPTIONS OffloadOptions,
+    _In_ USHORT                     MaximumSegmentSize,
+    _In_ USHORT                     TagControlInformation,
+    _In_ PXENVIF_PACKET_HASH        Hash,
+    _In_ BOOLEAN                    More,
+    _In_ PVOID                      Cookie
     );
 
 /*! \typedef XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS
@@ -646,8 +646,8 @@ typedef NTSTATUS
 */
 typedef VOID
 (*XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS)(
-    IN  PINTERFACE                  Interface,
-    OUT PXENVIF_VIF_OFFLOAD_OPTIONS Options
+    _In_ PINTERFACE                     Interface,
+    _Out_ PXENVIF_VIF_OFFLOAD_OPTIONS   Options
     );
 
 /*! \typedef XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS
@@ -659,8 +659,8 @@ typedef VOID
 */
 typedef VOID
 (*XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS)(
-    IN  PINTERFACE                  Interface,
-    IN  XENVIF_VIF_OFFLOAD_OPTIONS  Options
+    _In_ PINTERFACE                 Interface,
+    _In_ XENVIF_VIF_OFFLOAD_OPTIONS Options
     );
 
 /*! \typedef XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE
@@ -672,8 +672,8 @@ typedef VOID
 */
 typedef VOID
 (*XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE)(
-    IN  PINTERFACE  Interface,
-    IN  ULONG       Size
+    _In_ PINTERFACE Interface,
+    _In_ ULONG      Size
     );
 
 /*! \typedef XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE
@@ -686,9 +686,9 @@ typedef VOID
 */ 
 typedef VOID
 (*XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE)(
-    IN  PINTERFACE  Interface,
-    IN  UCHAR       Version,
-    OUT PULONG      Size
+    _In_ PINTERFACE Interface,
+    _In_ UCHAR      Version,
+    _Out_ PULONG    Size
     );
 
 /*! \typedef XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE
@@ -700,8 +700,8 @@ typedef VOID
 */
 typedef VOID
 (*XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE)(
-    IN  PINTERFACE  Interface,
-    OUT PULONG      Size
+    _In_ PINTERFACE Interface,
+    _Out_ PULONG    Size
     );
 
 /*! \typedef XENVIF_VIF_RECEIVER_QUERY_RING_SIZE
@@ -713,8 +713,8 @@ typedef VOID
 */
 typedef VOID
 (*XENVIF_VIF_RECEIVER_QUERY_RING_SIZE)(
-    IN  PINTERFACE  Interface,
-    OUT PULONG      Size
+    _In_ PINTERFACE Interface,
+    _Out_ PULONG    Size
     );
 
 /*! \typedef XENVIF_VIF_RECEIVER_SET_HASH_ALGORITHM
@@ -726,8 +726,8 @@ typedef VOID
 */
 typedef NTSTATUS
 (*XENVIF_VIF_RECEIVER_SET_HASH_ALGORITHM)(
-    IN  PINTERFACE                      Interface,
-    IN  XENVIF_PACKET_HASH_ALGORITHM    Algorithm
+    _In_ PINTERFACE                     Interface,
+    _In_ XENVIF_PACKET_HASH_ALGORITHM   Algorithm
     );
 
 /*! \typedef XENVIF_VIF_RECEIVER_QUERY_HASH_CAPABILITIES
@@ -741,7 +741,7 @@ typedef NTSTATUS
 */
 typedef NTSTATUS
 (*XENVIF_VIF_RECEIVER_QUERY_HASH_CAPABILITIES)(
-    IN  PINTERFACE  Interface,
+    _In_ PINTERFACE Interface,
     ...
     );
 
@@ -757,7 +757,7 @@ typedef NTSTATUS
 */
 typedef NTSTATUS
 (*XENVIF_VIF_RECEIVER_UPDATE_HASH_PARAMETERS)(
-    IN  PINTERFACE  Interface,
+    _In_ PINTERFACE Interface,
     ...
     );
 
@@ -773,10 +773,10 @@ typedef NTSTATUS
 */
 typedef VOID
 (*XENVIF_VIF_MAC_QUERY_STATE)(
-    IN  PINTERFACE                  Interface,
-    OUT PNET_IF_MEDIA_CONNECT_STATE MediaConnectState OPTIONAL,
-    OUT PULONG64                    LinkSpeed OPTIONAL,
-    OUT PNET_IF_MEDIA_DUPLEX_STATE  MediaDuplexState OPTIONAL
+    _In_ PINTERFACE                         Interface,
+    _Out_opt_ PNET_IF_MEDIA_CONNECT_STATE   MediaConnectState,
+    _Out_opt_ PULONG64                      LinkSpeed,
+    _Out_opt_ PNET_IF_MEDIA_DUPLEX_STATE    MediaDuplexState
     );
 
 /*! \typedef XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE
@@ -788,8 +788,8 @@ typedef VOID
 */
 typedef VOID
 (*XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE)(
-    IN  PINTERFACE  Interface,
-    OUT PULONG      Size
+    _In_ PINTERFACE Interface,
+    _Out_ PULONG    Size
     );
 
 /*! \typedef XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS
@@ -800,8 +800,8 @@ typedef VOID
 */
 typedef VOID
 (*XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS)(
-    IN  PINTERFACE          Interface,
-    OUT PETHERNET_ADDRESS   Address
+    _In_ PINTERFACE         Interface,
+    _Out_ PETHERNET_ADDRESS Address
     );
 
 /*! \typedef XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS
@@ -816,8 +816,8 @@ typedef VOID
 */
 typedef VOID
 (*XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS)(
-    IN  PINTERFACE          Interface,
-    OUT PETHERNET_ADDRESS   Address
+    _In_ PINTERFACE         Interface,
+    _Out_ PETHERNET_ADDRESS Address
     );
 
 /*! \typedef XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES
@@ -833,9 +833,9 @@ typedef VOID
 */
 typedef NTSTATUS
 (*XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES)(
-    IN      PINTERFACE          Interface,
-    OUT     PETHERNET_ADDRESS   Address OPTIONAL,
-    IN OUT  PULONG              Count
+    _In_ PINTERFACE             Interface,
+    _Out_opt_ PETHERNET_ADDRESS Address,
+    _Inout_ PULONG              Count
     );
 
 /*! \typedef XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES
@@ -850,9 +850,9 @@ typedef NTSTATUS
 */
 typedef NTSTATUS
 (*XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES)(
-    IN  PINTERFACE          Interface,
-    IN  PETHERNET_ADDRESS   Address OPTIONAL,
-    IN  ULONG               Count
+    _In_ PINTERFACE             Interface,
+    _In_opt_ PETHERNET_ADDRESS  Address,
+    _In_ ULONG                  Count
     );
 
 /*! \typedef XENVIF_VIF_MAC_SET_FILTER_LEVEL
@@ -865,9 +865,9 @@ typedef NTSTATUS
 */
 typedef NTSTATUS
 (*XENVIF_VIF_MAC_SET_FILTER_LEVEL)(
-    IN  PINTERFACE              Interface,
-    IN  ETHERNET_ADDRESS_TYPE   Type,
-    IN  XENVIF_MAC_FILTER_LEVEL Level
+    _In_ PINTERFACE                 Interface,
+    _In_ ETHERNET_ADDRESS_TYPE      Type,
+    _In_ XENVIF_MAC_FILTER_LEVEL    Level
     );
 
 /*! \typedef XENVIF_VIF_MAC_QUERY_FILTER_LEVEL
@@ -880,9 +880,9 @@ typedef NTSTATUS
 */
 typedef NTSTATUS
 (*XENVIF_VIF_MAC_QUERY_FILTER_LEVEL)(
-    IN  PINTERFACE                  Interface,
-    IN  ETHERNET_ADDRESS_TYPE       Type,
-    OUT PXENVIF_MAC_FILTER_LEVEL    Level
+    _In_ PINTERFACE                 Interface,
+    _In_ ETHERNET_ADDRESS_TYPE      Type,
+    _Out_ PXENVIF_MAC_FILTER_LEVEL  Level
     );
 
 // {76F279CD-CA11-418B-92E8-C57F77DE0E2E}
