@@ -2798,6 +2798,7 @@ __QueryInterface(
 
     KeInitializeEvent(&Event, NotificationEvent, FALSE);
     RtlZeroMemory(&StatusBlock, sizeof(StatusBlock));
+    RtlZeroMemory(Interface, Size);
 
     Irp = IoBuildSynchronousFsdRequest(IRP_MJ_PNP,
                                        DeviceObject,
