@@ -53,7 +53,7 @@ __StringPut(
 
 static PCHAR
 FormatNumber(
-    _Out_ PCHAR     Buffer,
+    _Out_ PSTR      Buffer,
     _In_ ULONGLONG  Value,
     _In_ UCHAR      Base,
     _In_ BOOLEAN    UpperCase
@@ -114,7 +114,7 @@ FormatNumber(
 static NTSTATUS
 StringWriteBuffer(
     _In_ PSTRING        String,
-    _In_ const CHAR     *Format,
+    _In_ PCSTR          Format,
     _In_ va_list        Arguments
     )
 {
@@ -420,7 +420,7 @@ done:
 NTSTATUS
 StringVPrintf(
     _In_ PSTRING    String,
-    _In_ const CHAR *Format,
+    _In_ PCSTR      Format,
     _In_ va_list    Arguments
     )
 {
@@ -453,7 +453,7 @@ fail1:
 NTSTATUS
 StringPrintf(
     _In_ PSTRING    String,
-    _In_ const CHAR *Format,
+    _In_ PCSTR      Format,
     ...
     )
 {
