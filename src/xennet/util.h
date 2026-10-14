@@ -30,8 +30,8 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _XENNET_UTIL_H
-#define _XENNET_UTIL_H
+#ifndef _COMMON_UTIL_H
+#define _COMMON_UTIL_H
 
 #include <ntddk.h>
 #include <intrin.h>
@@ -40,6 +40,11 @@
 
 #define	P2ROUNDUP(_t, _x, _a)   \
         (-(-((_t)(_x)) & -(((_t)(_a)))))
+
+#define TIME_US(_us)            ((_us) * 10ll)
+#define TIME_MS(_ms)            (TIME_US((_ms) * 1000ll))
+#define TIME_S(_s)              (TIME_MS((_s) * 1000ll))
+#define TIME_RELATIVE(_t)       (-(_t))
 
 static FORCEINLINE LONG
 __ffs(
@@ -89,7 +94,7 @@ __CpuId(
     _Out_opt_ PULONG    EDX
     )
 {
-    int                 Value[4] = {0};
+    int         Value[4] = {0};
 
     __cpuid(Value, Leaf);
 
@@ -108,12 +113,12 @@ __CpuId(
 
 static FORCEINLINE LONG
 __InterlockedAdd(
-    _Inout_ LONG    *Value,
-    _In_ LONG       Delta
+    _In_ LONG   *Value,
+    _In_ LONG   Delta
     )
 {
-    LONG            New;
-    LONG            Old;
+    LONG        New;
+    LONG        Old;
 
     do {
         Old = *Value;
@@ -125,12 +130,12 @@ __InterlockedAdd(
 
 static FORCEINLINE LONG
 __InterlockedSubtract(
-    _Inout_ LONG    *Value,
-    _In_ LONG       Delta
+    _In_ LONG   *Value,
+    _In_ LONG   Delta
     )
 {
-    LONG            New;
-    LONG            Old;
+    LONG        New;
+    LONG        Old;
 
     do {
         Old = *Value;
@@ -196,13 +201,12 @@ __AllocatePages(
 
     LowAddress.QuadPart = 0ull;
     HighAddress.QuadPart = ~0ull;
+    SkipBytes.QuadPart = 0ull;
     TotalBytes = (SIZE_T)PAGE_SIZE * Count;
 
     if (Contiguous) {
-        SkipBytes.QuadPart = TotalBytes;
         Flags = MM_ALLOCATE_REQUIRE_CONTIGUOUS_CHUNKS;
     } else {
-        SkipBytes.QuadPart = 0ull;
         Flags = MM_ALLOCATE_FULLY_REQUIRED;
     }
 
@@ -262,7 +266,7 @@ __FreePages(
     _In_ PMDL   Mdl
     )
 {
-    PUCHAR      MdlMappedSystemVa;
+    PUCHAR	MdlMappedSystemVa;
 
     ASSERT(Mdl->MdlFlags & MDL_MAPPED_TO_SYSTEM_VA);
     MdlMappedSystemVa = Mdl->MappedSystemVa;
@@ -277,15 +281,15 @@ __FreePages(
 
 static FORCEINLINE PSTR
 __strtok_r(
-    _Inout_opt_ PSTR    Buffer,
-    _In_ PSTR           Delimiter,
+    _In_opt_ PSTR   Buffer,
+    _In_ PSTR       Delimiter,
     _When_(Buffer != NULL, _Outptr_)
     _When_(Buffer == NULL, _Inout_)
-    PSTR                *Context
+    PSTR            *Context
     )
 {
-    PSTR                Token;
-    PSTR                End;
+    PSTR            Token;
+    PSTR            End;
 
     if (Buffer != NULL)
         *Context = Buffer;
@@ -317,15 +321,15 @@ __strtok_r(
 
 static FORCEINLINE PWSTR
 __wcstok_r(
-    _Inout_opt_ PWSTR   Buffer,
-    _In_ PWSTR          Delimiter,
+    _In_opt_ PWSTR  Buffer,
+    _In_ PWSTR      Delimiter,
     _When_(Buffer != NULL, _Outptr_)
     _When_(Buffer == NULL, _Inout_)
-    PWSTR               *Context
+    PWSTR           *Context
     )
 {
-    PWSTR               Token;
-    PWSTR               End;
+    PWSTR           Token;
+    PWSTR           End;
 
     if (Buffer != NULL)
         *Context = Buffer;
@@ -377,4 +381,4 @@ __tolower(
     return 'a' + Character - 'A';
 }
 
-#endif  // _XENNET_UTIL_H
+#endif  // _COMMON_UTIL_H
