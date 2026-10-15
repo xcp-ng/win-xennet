@@ -33,7 +33,6 @@
 #include <ndis.h>
 #include <procgrp.h>
 #include <tcpip.h>
-#include <xen.h>
 #include <ethernet.h>
 
 #include "util.h"
@@ -52,9 +51,11 @@ typedef struct _XENNET_RECEIVER_QUEUE {
 struct _XENNET_RECEIVER {
     PXENNET_ADAPTER             Adapter;
     NDIS_HANDLE                 NetBufferListPool;
+    ULONG                       ProcessorCount;
+    ULONG                       RingCount;
     PNET_BUFFER_LIST            PutList;
-    PNET_BUFFER_LIST            GetList[HVM_MAX_VCPUS];
-    XENNET_RECEIVER_QUEUE       Queue[HVM_MAX_VCPUS];
+    PNET_BUFFER_LIST            *GetList;
+    XENNET_RECEIVER_QUEUE       *Queue;
     LONG                        Indicated;
     LONG                        Returned;
     XENVIF_VIF_OFFLOAD_OPTIONS  OffloadOptions;
@@ -500,6 +501,24 @@ ReceiverInitialize(
     RtlZeroMemory(*Receiver, sizeof(XENNET_RECEIVER));
     (*Receiver)->Adapter = Adapter;
 
+    (*Receiver)->ProcessorCount = KeQueryMaximumProcessorCountEx(ALL_PROCESSOR_GROUPS);
+    XENVIF_VIF(QueryRingCount,
+               AdapterGetVifInterface(Adapter),
+               NULL,
+               &(*Receiver)->RingCount);
+
+    (*Receiver)->GetList = __AllocatePoolWithTag(NonPagedPool,
+                                                 (*Receiver)->ProcessorCount * sizeof(PNET_BUFFER_LIST),
+                                                 RECEIVER_POOL_TAG);
+    if ((*Receiver)->GetList == NULL)
+        goto fail2;
+
+    (*Receiver)->Queue = __AllocatePoolWithTag(NonPagedPool,
+                                               (*Receiver)->RingCount * sizeof(XENNET_RECEIVER_QUEUE),
+                                               RECEIVER_POOL_TAG);
+    if ((*Receiver)->Queue == NULL)
+        goto fail3;
+
     RtlZeroMemory(&Params, sizeof(NET_BUFFER_LIST_POOL_PARAMETERS));
     Params.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
     Params.Header.Revision = NET_BUFFER_LIST_POOL_PARAMETERS_REVISION_1;
@@ -514,9 +533,9 @@ ReceiverInitialize(
 
     status = NDIS_STATUS_RESOURCES;
     if ((*Receiver)->NetBufferListPool == NULL)
-        goto fail2;
+        goto fail4;
 
-    for (Index = 0; Index < HVM_MAX_VCPUS; Index++) {
+    for (Index = 0; Index < (*Receiver)->RingCount; Index++) {
         PXENNET_RECEIVER_QUEUE  Queue = &(*Receiver)->Queue[Index];
 
         KeInitializeSpinLock(&Queue->Lock);
@@ -524,8 +543,29 @@ ReceiverInitialize(
 
     return NDIS_STATUS_SUCCESS;
 
+fail4:
+    Error("fail4\n");
+
+    __FreePoolWithTag((*Receiver)->Queue, RECEIVER_POOL_TAG);
+    (*Receiver)->Queue = NULL;
+
+fail3:
+    Error("fail3\n");
+
+    __FreePoolWithTag((*Receiver)->GetList, RECEIVER_POOL_TAG);
+    (*Receiver)->GetList = NULL;
+
 fail2:
+    Error("fail2\n");
+
+    (*Receiver)->ProcessorCount = 0;
+    (*Receiver)->RingCount = 0;
+    __FreePoolWithTag(*Receiver, RECEIVER_POOL_TAG);
+    *Receiver = NULL;
+
 fail1:
+    Error("fail1 (%08x)\n", status);
+
     return status;
 }
 
@@ -541,7 +581,7 @@ ReceiverTeardown(
 
     ASSERT3U(Receiver->Returned, ==, Receiver->Indicated);
 
-    for (Index = 0; Index < HVM_MAX_VCPUS; Index++) {
+    for (Index = 0; Index < Receiver->ProcessorCount; Index++) {
         NetBufferList = Receiver->GetList[Index];
 
         while (NetBufferList != NULL) {
@@ -570,6 +610,15 @@ ReceiverTeardown(
 
     NdisFreeNetBufferListPool(Receiver->NetBufferListPool);
     Receiver->NetBufferListPool = NULL;
+
+    __FreePoolWithTag(Receiver->Queue, RECEIVER_POOL_TAG);
+    Receiver->Queue = NULL;
+
+    __FreePoolWithTag(Receiver->GetList, RECEIVER_POOL_TAG);
+    Receiver->GetList = NULL;
+
+    Receiver->RingCount = 0;
+    Receiver->ProcessorCount = 0;
 
     Receiver->Adapter = NULL;
 
