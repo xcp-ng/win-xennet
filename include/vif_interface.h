@@ -499,9 +499,9 @@ typedef union _XENVIF_VIF_CALLBACK_PARAMETERS_V10 XENVIF_VIF_CALLBACK_PARAMETERS
 */
 typedef VOID
 (*XENVIF_VIF_CALLBACK)(
-    _In_opt_ PVOID                          Argument,
-    _In_ XENVIF_VIF_CALLBACK_TYPE           Type,
-    _In_ PXENVIF_VIF_CALLBACK_PARAMETERS    Parameters
+    _In_opt_ PVOID                              Argument,
+    _In_ XENVIF_VIF_CALLBACK_TYPE               Type,
+    _In_opt_ PXENVIF_VIF_CALLBACK_PARAMETERS    Parameters
     );
 
 typedef NTSTATUS
@@ -567,7 +567,7 @@ typedef NTSTATUS
     _Out_ PULONGLONG            Value
     );
 
-/*! \typedef XENVIF_VIF_QUERY_RING_COUNT
+/*! \typedef XENVIF_VIF_QUERY_RING_COUNT_V8
     \brief Query the number of shared rings between frontend
     and backend
 
@@ -575,9 +575,24 @@ typedef NTSTATUS
     \param Count Buffer to receive the count
 */
 typedef VOID
-(*XENVIF_VIF_QUERY_RING_COUNT)(
+(*XENVIF_VIF_QUERY_RING_COUNT_V8)(
     _In_ PINTERFACE Interface,
     _Out_ PULONG    Count
+    );
+
+/*! \typedef XENVIF_VIF_QUERY_RING_COUNT
+    \brief Query the number of shared rings between frontend
+    and backend
+
+    \param Interface The interface header
+    \param Count Buffer to receive the count
+    \param MaxCount Buffer to receive the maximum possible ring count
+*/
+typedef VOID
+(*XENVIF_VIF_QUERY_RING_COUNT)(
+    _In_ PINTERFACE     Interface,
+    _Out_opt_ PULONG    Count,
+    _Out_opt_ PULONG    MaxCount
     );
 
 /*! \typedef XENVIF_VIF_UPDATE_HASH_MAPPING
@@ -900,7 +915,7 @@ struct _XENVIF_VIF_INTERFACE_V8 {
     XENVIF_VIF_ENABLE_V8                            EnableVersion8;
     XENVIF_VIF_DISABLE                              Disable;
     XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
-    XENVIF_VIF_QUERY_RING_COUNT                     QueryRingCount;
+    XENVIF_VIF_QUERY_RING_COUNT_V8                  QueryRingCountVersion8;
     XENVIF_VIF_UPDATE_HASH_MAPPING                  UpdateHashMapping;
     XENVIF_VIF_RECEIVER_RETURN_PACKET               ReceiverReturnPacket;
     XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
@@ -934,7 +949,7 @@ struct _XENVIF_VIF_INTERFACE_V9 {
     XENVIF_VIF_ENABLE_V9                            EnableVersion9;
     XENVIF_VIF_DISABLE                              Disable;
     XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
-    XENVIF_VIF_QUERY_RING_COUNT                     QueryRingCount;
+    XENVIF_VIF_QUERY_RING_COUNT_V8                  QueryRingCountVersion8;
     XENVIF_VIF_UPDATE_HASH_MAPPING                  UpdateHashMapping;
     XENVIF_VIF_RECEIVER_RETURN_PACKET               ReceiverReturnPacket;
     XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
@@ -968,6 +983,40 @@ struct _XENVIF_VIF_INTERFACE_V10 {
     XENVIF_VIF_ENABLE                               Enable;
     XENVIF_VIF_DISABLE                              Disable;
     XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
+    XENVIF_VIF_QUERY_RING_COUNT_V8                  QueryRingCountVersion8;
+    XENVIF_VIF_UPDATE_HASH_MAPPING                  UpdateHashMapping;
+    XENVIF_VIF_RECEIVER_RETURN_PACKET               ReceiverReturnPacket;
+    XENVIF_VIF_RECEIVER_SET_OFFLOAD_OPTIONS         ReceiverSetOffloadOptions;
+    XENVIF_VIF_RECEIVER_SET_BACKFILL_SIZE           ReceiverSetBackfillSize;
+    XENVIF_VIF_RECEIVER_QUERY_RING_SIZE             ReceiverQueryRingSize;
+    XENVIF_VIF_RECEIVER_SET_HASH_ALGORITHM          ReceiverSetHashAlgorithm;
+    XENVIF_VIF_RECEIVER_QUERY_HASH_CAPABILITIES     ReceiverQueryHashCapabilities;
+    XENVIF_VIF_RECEIVER_UPDATE_HASH_PARAMETERS      ReceiverUpdateHashParameters;
+    XENVIF_VIF_TRANSMITTER_QUEUE_PACKET             TransmitterQueuePacket;
+    XENVIF_VIF_TRANSMITTER_QUERY_OFFLOAD_OPTIONS    TransmitterQueryOffloadOptions;
+    XENVIF_VIF_TRANSMITTER_QUERY_LARGE_PACKET_SIZE  TransmitterQueryLargePacketSize;
+    XENVIF_VIF_TRANSMITTER_QUERY_RING_SIZE          TransmitterQueryRingSize;
+    XENVIF_VIF_MAC_QUERY_STATE                      MacQueryState;
+    XENVIF_VIF_MAC_QUERY_MAXIMUM_FRAME_SIZE         MacQueryMaximumFrameSize;
+    XENVIF_VIF_MAC_QUERY_PERMANENT_ADDRESS          MacQueryPermanentAddress;
+    XENVIF_VIF_MAC_QUERY_CURRENT_ADDRESS            MacQueryCurrentAddress;
+    XENVIF_VIF_MAC_QUERY_MULTICAST_ADDRESSES        MacQueryMulticastAddresses;
+    XENVIF_VIF_MAC_SET_MULTICAST_ADDRESSES          MacSetMulticastAddresses;
+    XENVIF_VIF_MAC_SET_FILTER_LEVEL                 MacSetFilterLevel;
+    XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
+};
+
+/*! \struct _XENVIF_VIF_INTERFACE_V11
+    \brief VIF interface version 11
+    \ingroup interfaces
+*/
+struct _XENVIF_VIF_INTERFACE_V11 {
+    INTERFACE                                       Interface;
+    XENVIF_VIF_ACQUIRE                              Acquire;
+    XENVIF_VIF_RELEASE                              Release;
+    XENVIF_VIF_ENABLE                               Enable;
+    XENVIF_VIF_DISABLE                              Disable;
+    XENVIF_VIF_QUERY_STATISTIC                      QueryStatistic;
     XENVIF_VIF_QUERY_RING_COUNT                     QueryRingCount;
     XENVIF_VIF_UPDATE_HASH_MAPPING                  UpdateHashMapping;
     XENVIF_VIF_RECEIVER_RETURN_PACKET               ReceiverReturnPacket;
@@ -991,7 +1040,7 @@ struct _XENVIF_VIF_INTERFACE_V10 {
     XENVIF_VIF_MAC_QUERY_FILTER_LEVEL               MacQueryFilterLevel;
 };
 
-typedef struct _XENVIF_VIF_INTERFACE_V10 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTERFACE;
+typedef struct _XENVIF_VIF_INTERFACE_V11 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTERFACE;
 
 /*! \def XENVIF_VIF
     \brief Macro at assist in method invocation
@@ -1002,6 +1051,6 @@ typedef struct _XENVIF_VIF_INTERFACE_V10 XENVIF_VIF_INTERFACE, *PXENVIF_VIF_INTE
 #endif  // _WINDLL
 
 #define XENVIF_VIF_INTERFACE_VERSION_MIN    8
-#define XENVIF_VIF_INTERFACE_VERSION_MAX    10
+#define XENVIF_VIF_INTERFACE_VERSION_MAX    11
 
 #endif  // _XENVIF_INTERFACE_H

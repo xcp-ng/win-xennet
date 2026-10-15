@@ -3110,7 +3110,8 @@ AdapterSetGeneralAttributes(
 
     XENVIF_VIF(QueryRingCount,
                &Adapter->VifInterface,
-               &Rss.NumberOfReceiveQueues);
+               &Rss.NumberOfReceiveQueues,
+               NULL);
     Rss.NumberOfInterruptMessages = Rss.NumberOfReceiveQueues;
 
     if ((ULONG)Adapter->Properties.numrssqueues < Rss.NumberOfReceiveQueues)
